@@ -118,8 +118,8 @@ BOM_LastUpdated
 | Integration | Local/Cloud | R/W | Capabilities |
 |---|---|---|---|
 | **Asko Washing Machine** (ConnectLife) | ☁️ | ✏️ | Running status (Off/Running/Paused/Finished), door locked state, current wash programme, temperature, spin speed, time remaining, cycle complete indicator, error code ⚠️ *Property codes require validation against actual model* |
-| **Gaggenau Oven** (Home Connect) | ☁️ | ✏️ | Operation state (Inactive/Ready/Run/Finished/Error), door state (Closed/Open), set temperature, current cavity temperature, active programme, time remaining, preheat complete, remote control active flag, child lock ⚠️ *Remote start requires physical user authorisation on appliance* |
-| **Gaggenau Cooktop** (Home Connect) | ☁️ | ✏️ | Operation state, child lock ⚠️ *Zone-level data limited by API* |
+| **Gaggenau Oven** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state (Inactive/Ready/Run/Finished/Error), door state (Closed/Open), current cavity temperature, active programme, time remaining, preheat complete, alarm elapsed, remote control active flag, child lock, oven light ⚠️ *Requires proxy service + one-time profile download. Remote start requires physical user authorisation.* |
+| **Gaggenau Cooktop** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state, local control active, child lock ⚠️ *Requires proxy service + one-time profile download* |
 | **Reclaim Hot Water** | ☁️/🏠 ⚠️ | ✏️ ⚠️ | Tank temperature, target temperature, heating state (Heating/Standby/Boost), operation mode (Heat Pump/Element), boost active ⚠️ *API discovery required — Modbus preferred if hardware supports it* |
 
 **Washing Machine — C-Bus UserParams:**
@@ -130,8 +130,8 @@ WashingMachine_DoorLocked, WashingMachine_Complete, WashingMachine_LastUpdated
 
 **Oven — C-Bus UserParams:**
 ```
-Oven_OperationState, Oven_DoorState, Oven_SetTemp, Oven_CurrentTemp
-Oven_Program, Oven_TimeRemaining, Oven_PreheatDone, Oven_RemoteAllowed
+Oven_OperationState, Oven_DoorState, Oven_CurrentTemp
+Oven_Program, Oven_TimeRemaining, Oven_PreheatDone, Oven_AlarmElapsed, Oven_RemoteAllowed
 Oven_LastUpdated
 
 Cooktop_OperationState, Cooktop_LastUpdated
@@ -229,7 +229,7 @@ Shelly_LastUpdated
 | 5 | BOM Weather | Weather | ☁️ | 📖 | Easy | Not yet implemented |
 | 6 | Shelly Devices | Lighting | 🏠 | ✏️ | Easy–Medium | Not yet implemented |
 | 7 | Asko Washing Machine | Appliances | ☁️ | ✏️ | Hard | Not yet implemented — API research needed |
-| 8 | Gaggenau Home Connect | Appliances | ☁️ | ✏️ | Medium–Hard | Not yet implemented — developer account needed |
+| 8 | Gaggenau Home Connect (Local) | Appliances | 🏠 ⚠️ | ✏️ | Medium | Not yet implemented — profile download + proxy service needed |
 | 9 | Ubiquiti UDM | Presence | 🏠 | 📖 | Medium | Not yet implemented |
 | 10 | LG TV | Entertainment | 🏠 ⚠️ | 📖 | Easy (ping) / Very Hard (full) | Not yet implemented — ping approach first |
 | 11 | Apple TV | Entertainment | 🏠 ⚠️ | ✏️ | Medium (proxy) | Not yet implemented — proxy required |
@@ -283,7 +283,7 @@ Based on difficulty, value, and dependencies:
 | BOM Weather | Yes — always | None — cached values remain stale |
 | Shelly Devices | No | N/A |
 | Asko Washing Machine | Yes — always | None |
-| Gaggenau Home Connect | Yes — always | None |
+| Gaggenau Home Connect (Local) | No (runtime) | N/A — fully local once profiles downloaded |
 | Ubiquiti UDM | No | N/A |
 | LG TV (ping) | No | N/A |
 | Apple TV (proxy) | No | N/A |

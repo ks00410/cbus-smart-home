@@ -1,66 +1,81 @@
-# Integration Research: Gaggenau Oven and Cooktop (Home Connect)
+# Integration Research: Gaggenau Oven and Cooktop (Home Connect — Local)
 
 **Integration #:** 8  
-**Device / Service:** Gaggenau oven and cooktop via BSH Home Connect cloud platform  
+**Device / Service:** Gaggenau oven and cooktop via BSH Home Connect — **local LAN WebSocket**  
 **Last Researched:** 2025  
+**Updated:** Local LAN approach confirmed via `chris-mc1/homeconnect_local_hass` and `homeconnect-websocket` Python library
 
 ---
 
 ## 1. Integration Method
 
-**Cloud API — BSH Home Connect REST API.**
+**Local LAN — Home Connect WebSocket protocol (TLS/PSK or AES).**
 
-Gaggenau is a premium brand within the BSH Home Appliances group (along with Bosch, Siemens, Neff, and others). All BSH connected appliances use the **Home Connect** platform.
+BSH appliances (Gaggenau, Bosch, Siemens, Neff) communicate over the local network using a **WebSocket-based protocol** with per-appliance encryption. This is confirmed by the open-source Home Assistant integration [`homeconnect_local_hass`](https://github.com/chris-mc1/homeconnect_local_hass) and the underlying Python library [`homeconnect-websocket`](https://pypi.org/project/homeconnect-websocket/) (v1.5.4 as of August 2026).
 
-BSH provides an **officially documented developer API** at `https://api.home-connect.com`. This is one of the most developer-friendly appliance APIs available, with full OAuth2 documentation, a developer sandbox, and a published API reference.
+### Protocol details
 
-**Base URL:** `https://api.home-connect.com`  
-**Key endpoints:**
-- `GET /api/homeappliances` — list all registered appliances
-- `GET /api/homeappliances/<haId>/status` — current appliance status
-- `GET /api/homeappliances/<haId>/settings` — current settings
-- `PUT /api/homeappliances/<haId>/settings/<settingKey>` — change a setting
-- `GET /api/homeappliances/<haId>/programs/active` — currently running program
-- `PUT /api/homeappliances/<haId>/programs/active` — start a program
-- `DELETE /api/homeappliances/<haId>/programs/active` — stop current program
-- `GET /api/homeappliances/<haId>/events` — **Server-Sent Events (SSE) stream** for real-time updates
+- **Transport:** WebSocket (ws://)
+- **Encryption:** Two modes depending on appliance generation:
+  - **TLS mode** (newer appliances): TLS with a device-specific PSK (Pre-Shared Key)
+  - **AES mode** (older appliances): AES-CBC with a device-specific key and IV
+- **Encryption credentials:** Retrieved once from the Home Connect cloud via the [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader) tool — downloads a ZIP containing each appliance's `DeviceDescription.xml`, `FeatureMapping.xml`, encryption key, and IV
+- **Discovery:** Appliances advertise themselves via **mDNS/Zeroconf** on the LAN (the HA integration includes a zeroconf discovery step)
+- **Connection:** Persistent WebSocket connection to `ws://<appliance-ip>/`; reconnects automatically on drop
 
-The SSE event stream is the most powerful feature — the API server pushes state changes to the client in real time. However, SSE requires a persistent HTTP connection with chunked transfer encoding, which is difficult to implement in Lua on the 5500AC. **Polling is the recommended approach for this platform.**
+### Why this cannot be implemented directly in Lua
+
+WebSocket is not available as a native library on the C-Bus 5500AC (LogicMachine) Lua environment. The `homeconnect-websocket` protocol also involves TLS with PSK negotiation — not standard HTTPS. This cannot be reproduced in plain Lua.
+
+### Recommended approach: Local HTTP Proxy
+
+Run a lightweight Python proxy service on a LAN device (NAS, Raspberry Pi, or similar always-on host) that:
+1. Uses `homeconnect-websocket` to maintain a persistent WebSocket connection to each appliance
+2. Exposes a simple HTTP REST endpoint (e.g. `GET /oven/status`, `POST /oven/command`) for the 5500AC to poll
+3. Caches the latest appliance state received via the persistent WebSocket connection
+
+The 5500AC uses `socket.http` to poll the proxy — **identical pattern to the Shelly and OpenSprinkler integrations**. The proxy handles all WebSocket complexity.
+
+This approach:
+- Is **fully local** — no cloud API calls at runtime
+- Is **fast** — WebSocket state updates from the appliance arrive in real time; proxy caches them
+- Is **maintainable** — the `homeconnect-websocket` library is actively maintained on PyPI
 
 ---
 
 ## 2. Connectivity Requirement
 
-☁️ **Internet connection required.**  
-The Home Connect API is a cloud service. BSH has stated no intention to provide a local LAN API. An internet connection is required for all status polling and control.
+🏠 **Fully local at runtime — no internet connection required.**
+
+One-time setup steps that do require internet:
+1. Create a Home Connect account and connect appliances via the Home Connect app (once only)
+2. Run the [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader) to extract appliance profiles (once only, or when re-keying)
+
+After the profiles are downloaded and the proxy is running, **no internet or cloud access is needed** for ongoing operation.
 
 ---
 
 ## 3. Authentication Method
 
-**OAuth2 — Authorization Code flow with PKCE.**
+**Per-appliance PSK or AES key** — static hardware credentials.
 
-The Home Connect API uses standard OAuth2. Initial token generation requires a user to authenticate via a web browser (Authorization Code flow), making it unsuitable for fully automated headless setup on the 5500AC.
+Each appliance has a unique encryption key and (for AES mode) an IV, embedded in its firmware and extractable via the Home Connect Profile Downloader. These credentials are:
+- Downloaded once using the Profile Downloader tool (requires a Home Connect cloud account login, but only once)
+- Stored in the proxy service configuration
+- Used directly by `homeconnect-websocket` to authenticate the WebSocket connection
 
-**Recommended approach:**
-1. Register as a developer at `developer.home-connect.com` and create an application (Client ID + Client Secret).
-2. Run a Python OAuth2 helper script on a desktop to complete the Authorization Code flow and obtain an initial `access_token` and `refresh_token`.
-3. Store the refresh token in `user.secrets` on the 5500AC.
-4. The Lua library handles token refresh using the refresh token (same pattern as Panasonic).
+No ongoing token refresh, OAuth2, or cloud API interaction is required at runtime.
 
-**Token endpoint:** `POST https://api.home-connect.com/security/oauth/token`
-
-Token lifespan: Access tokens expire after approximately 24 hours; refresh tokens are long-lived.
-
-Credentials in `user.secrets`:
-```lua
-secrets.homeconnect = {
-  client_id     = "your-client-id",
-  client_secret = "your-client-secret",
-  access_token  = "...",
-  refresh_token = "...",
-  oven_ha_id    = "Gaggenau-Oven-XXXXXXXXXXXX",
-  cooktop_ha_id = "Gaggenau-Cooktop-XXXXXXXXXXXX"
+Credentials stored in proxy config (not on the 5500AC):
+```json
+{
+  "oven": {
+    "host": "192.168.1.xx",
+    "psk": "base64-encoded-psk",
+    "ha_id": "Gaggenau-Oven-XXXXXXXXXXXX",
+    "device_description": "path/to/DeviceDescription.xml",
+    "feature_mapping": "path/to/FeatureMapping.xml"
+  }
 }
 ```
 
@@ -68,102 +83,114 @@ secrets.homeconnect = {
 
 ## 4. Polling vs. Event-Driven
 
-**Polling** — 60-second interval recommended.
+**Effectively event-driven** — same pattern as Inception long-poll.
 
-While the Home Connect API offers an SSE event stream for real-time updates, implementing SSE in Lua on the 5500AC is impractical (requires parsing chunked HTTP with partial reads). HTTP polling is simpler and sufficient for dashboard monitoring.
+The WebSocket connection delivers appliance state updates in real time as they occur (door opened, programme started, temperature reached, etc.). The proxy caches the latest state and the 5500AC polls the proxy HTTP endpoint at a regular interval (e.g. 30 seconds) to retrieve the cached state.
 
-Recommended intervals:
-- **When idle:** Every 5 minutes
-- **When active (program running):** Every 30–60 seconds
-
-State-aware polling (same technique as Asko) reduces unnecessary API calls. Access token refresh is handled automatically on 401 responses.
+For the proxy itself, no polling is needed — it receives push updates from the appliance continuously over the persistent WebSocket.
 
 ---
 
 ## 5. Available Data / Controllable Parameters
 
-### Read (Status and Program State)
+Based on the entity descriptions in [`cooking.py`](https://github.com/chris-mc1/homeconnect_local_hass/blob/main/custom_components/homeconnect_ws/entity_descriptions/cooking.py) and the `homeconnect-websocket` library.
 
-**Oven:**
+### Oven
 
-| Metric | Key | Notes |
-|---|---|---|
-| Door state | `BSH.Common.Status.DoorState` | Closed / Open / Locked |
-| Operation state | `BSH.Common.Status.OperationState` | Inactive / Ready / Run / Pause / ActionRequired / Finished / Error |
-| Remote control active | `BSH.Common.Status.RemoteControlActive` | Boolean — must be true for remote commands |
-| Remote start allowed | `BSH.Common.Status.RemoteControlStartAllowed` | Boolean |
-| Active program | `BSH.Common.Root.ActiveProgram` | e.g. `Cooking.Oven.Program.HeatingMode.HotAir` |
-| Heating mode | `Cooking.Oven.Option.SetpointTemperature` | °C |
-| Set temperature | `Cooking.Oven.Status.CurrentCavityTemperature` | °C (current actual) |
-| Duration / remaining time | `BSH.Common.Option.Duration`, `BSH.Common.Option.RemainingProgramTime` | Seconds |
-| Preheat complete | `Cooking.Oven.Event.PreheatFinished` | Event |
+**Read:**
 
-**Cooktop:**
+| Entity Key | Notes |
+|---|---|
+| `BSH.Common.Status.OperationState` | Inactive / Ready / Run / Pause / ActionRequired / Finished / Error |
+| `BSH.Common.Status.DoorState` | Closed / Open / Locked |
+| `BSH.Common.Status.RemoteControlActive` | Boolean — must be true for remote commands |
+| `BSH.Common.Status.RemoteControlStartAllowed` | Boolean |
+| `Cooking.Oven.Status.Cavity.N.CurrentTemperature` | °C — current cavity temperature (per cavity) |
+| `Cooking.Oven.Status.Cavity.N.WaterTankEmpty` | Boolean |
+| `Cooking.Oven.Event.Cavity.N.AlarmClockElapsed` | Boolean — alarm clock finished |
+| `Cooking.Oven.Event.Cavity.N.PreheatFinished` | Boolean |
+| `BSH.Common.Root.ActiveProgram` | Currently running programme key |
+| `BSH.Common.Option.RemainingProgramTime` | Seconds remaining |
+| `BSH.Common.Option.Duration` | Programme duration in seconds |
+| `BSH.Common.Option.StartInRelative` | Delayed start offset (seconds) |
 
-| Metric | Key | Notes |
-|---|---|---|
-| Operation state | `BSH.Common.Status.OperationState` | Inactive / Run / Error |
-| Active zone power levels | Zone-specific status keys | 0=off, 1–9 = power level |
-| Child lock | `BSH.Common.Setting.ChildLock` | Boolean |
+**Write (Control — requires `RemoteControlActive = true`):**
 
-### Write (Control)
+| Action | Entity Key |
+|---|---|
+| Start programme | `BSH.Common.Root.ActiveProgram` with options |
+| Stop programme | `BSH.Common.Root.ActiveProgram` → delete |
+| Set alarm clock | `Cooking.Oven.Setting.Cavity.N.AlarmClock` |
+| Set child lock | `BSH.Common.Setting.ChildLock` |
+| Set oven light | `Cooking.Oven.Setting.Cavity.N.Light` |
 
-Remote commands require `RemoteControlActive = true` (user must enable remote on the appliance) and `RemoteControlStartAllowed = true`.
+### Cooktop
+
+**Read:**
+
+| Entity Key | Notes |
+|---|---|
+| `BSH.Common.Status.OperationState` | Inactive / Run / Error |
+| `BSH.Common.Status.LocalControlActive` | User actively using cooktop |
+| Per-zone heating level | Zone-specific entities from FeatureMapping |
+
+**Write:**
 
 | Action | Notes |
 |---|---|
-| Preheat oven to temperature | Set `Cooking.Oven.Program.HeatingMode.HotAir` with temp |
-| Start timed cooking | Program + temperature + duration |
-| Stop program | `DELETE /programs/active` |
-| Change setting | `PUT /settings/<key>` (e.g. child lock, light) |
-
-> **Practical note:** For safety, the oven's physical "Remote Start" button must be pressed by a user before remote commands will be accepted. This limits automation of oven start — monitoring is the more practical use case.
+| Child lock | `BSH.Common.Setting.ChildLock` |
 
 ---
 
 ## 6. Estimated Implementation Difficulty
 
-🟠 **Medium to Hard.**
+**Proxy service development:** 🟡 **Easy to Medium**
+- `homeconnect-websocket` is pip-installable and well-documented
+- Proxy is a simple Python `asyncio` HTTP server wrapping the WebSocket client
+- One-time profile download setup is required
 
-The API is well-documented (unlike Asko/ConnectLife) which reduces integration risk significantly. The main challenges are:
-- OAuth2 Authorization Code flow for initial token generation (requires desktop Python helper)
-- Token refresh management (same complexity as Panasonic)
-- Appliance HA ID discovery
-- Mapping BSH key strings to C-Bus UserParam names
+**C-Bus Lua client:** ✅ **Easy**
+- Standard `socket.http` polling against the proxy endpoint
+- Same pattern as Shelly / OpenSprinkler
 
-A read-only monitoring implementation is **Medium**. Adding remote control raises to **Hard** due to the remote-start-authorisation requirement and safety implications.
+**Profile download setup:** 🟡 **Easy** (once)
+- Requires a Home Connect account with appliances registered
+- [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader) does the extraction
+
+**Overall (proxy approach):** 🟠 **Medium** — infrastructure to set up, but the core protocol library exists and is production-grade.
 
 ---
 
 ## 7. Known Limitations and Risks
 
-- **Remote control safety gate** — the oven only accepts remote commands when "Remote Start" has been physically enabled on the appliance. This is a deliberate safety design — remote oven ignition without physical user confirmation is not possible.
-- **Developer account required** — must register at `developer.home-connect.com`. Approval is typically automatic but requires acceptance of T&Cs.
-- **Cloud dependency** — no local API fallback.
-- **Rate limits** — Home Connect API enforces rate limits. As of 2024: 1 request per second, 1000 requests per day per client. At 60-second polling for 2 appliances, daily usage is ~2880 requests — likely to exceed the free tier limit. **Use state-aware polling (5-minute intervals when idle) to stay within limits.**
-- **Access token and refresh token management** — same approach as Panasonic but must be implemented separately (Home Connect is not related to Comfort Cloud).
-- **SSE not viable on 5500AC** — the real-time event stream cannot practically be consumed from Lua.
+- **Proxy infrastructure required** — a separate always-on LAN device must run the Python proxy. The same host used for the Apple TV pyatv proxy can serve double duty.
+- **Profile re-download on re-keying** — if BSH ever rotates appliance keys (unlikely but possible), the profile must be re-downloaded. The Profile Downloader tool needs to be re-run, but this is a one-time action.
+- **Remote control safety gate** — the oven only accepts remote programme start commands when the user has physically pressed the "Remote Start" button on the appliance. This is a deliberate safety feature and cannot be bypassed. Monitoring (temperature, door state, programme state) works without this gate.
+- **`RemoteControlActive` check required** — any control command should first verify that `RemoteControlActive` is true; otherwise the command will be rejected by the appliance.
+- **WebSocket reconnection** — the proxy must implement reconnection logic (already provided by the `homeconnect-websocket` library's `ConnectionState.RECONNECTING` callback).
+- **mDNS vs static IP** — the appliance advertises via mDNS. If no mDNS resolver is available on the proxy host, configure a static IP for the appliance and set it explicitly in the proxy config.
+- **AES vs TLS mode** — older Gaggenau models may use AES mode. Confirm the `connectionType` field in the downloaded profile JSON (`"TLS"` or `"AES"`). The `homeconnect-websocket` library supports both.
 
 ---
 
 ## 8. Recommended C-Bus Group Address Strategy
 
-User Parameters per appliance.
+User Parameters via the proxy HTTP endpoint.
 
 Suggested naming convention:
 
 ```
-Oven_OperationState   (String — "Inactive" / "Ready" / "Run" / "Finished")
+Oven_OperationState   (String — "Inactive" / "Ready" / "Run" / "Finished" / "Error")
 Oven_DoorState        (String — "Closed" / "Open")
-Oven_SetTemp          (Number, °C)
-Oven_CurrentTemp      (Number, °C)
-Oven_Program          (String — "Hot Air", "Grill", etc.)
+Oven_CurrentTemp      (Number, °C — cavity temperature)
+Oven_Program          (String — active programme name)
 Oven_TimeRemaining    (Number — seconds)
 Oven_PreheatDone      (Number — 0/1)
+Oven_AlarmElapsed     (Number — 0/1)
 Oven_RemoteAllowed    (Number — 0/1)
 Oven_LastUpdated      (String)
 
-Cooktop_OperationState (String)
+Cooktop_OperationState (String — "Inactive" / "Run")
 Cooktop_LastUpdated    (String)
 ```
 
@@ -173,28 +200,27 @@ Cooktop_LastUpdated    (String)
 
 | Pattern | Source | Applicability |
 |---|---|---|
-| OAuth2 token refresh | Panasonic gold-standard | Adapt `P.RefreshAccessToken()` pattern |
-| `ssl.https` + `ltn12` HTTPS | Panasonic gold-standard | Required |
+| `socket.http` local LAN polling | Inception, Unisenza | Polling the proxy endpoint |
 | `safeSetUserParam` | All gold-standard | Required |
 | `isDebuggingEnabled` cached per poll | All gold-standard | Required |
-| State-aware polling | Module state pattern | `_ovenState` persisted between polls |
-| `user.secrets` isolation | All gold-standard | Required |
+| `_missingParamWarned` | All gold-standard | Required |
+| Proxy architecture | Apple TV (pyatv) | Same pattern — one proxy host, multiple integrations |
 
 ---
 
 ## Action Required
 
-1. **Register Home Connect developer account** at `developer.home-connect.com` and create an application.
-2. **Discover HA IDs** — run the Python helper to authenticate and call `GET /api/homeappliances` to get the HA IDs for both the oven and cooktop.
-3. **Confirm rate limits** — review current Home Connect API rate limit documentation and design polling strategy accordingly.
-4. **Write Python OAuth2 helper** for desktop-based initial token generation.
-5. **Implement read-only monitoring first** — operation state, temperature, time remaining.
-6. **Write integration script** in a future session.
+1. **Download appliance profiles** — install [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader), log in with Home Connect account, download ZIP profiles for oven and cooktop. Select "openHAB" as target format.
+2. **Set up proxy host** — confirm an always-on LAN device (NAS, Pi, etc.) is available. This can be shared with the Apple TV pyatv proxy.
+3. **Install `homeconnect-websocket`** — `pip install homeconnect-websocket` on the proxy host.
+4. **Write proxy service** — Python asyncio HTTP server wrapping `homeconnect_websocket.HomeAppliance`. Expose `GET /oven/status` and `GET /cooktop/status` endpoints returning JSON.
+5. **Write C-Bus Lua integration script** in a future session — standard `socket.http` poll of the proxy endpoint.
 
 ---
 
 ## Reference
 
-- Home Connect Developer Portal: https://developer.home-connect.com
-- Home Connect API Reference: https://apiclient.home-connect.com
-- Home Assistant Home Connect integration: https://github.com/home-assistant/core/tree/dev/homeassistant/components/home_connect
+- Home Connect Local HA integration: https://github.com/chris-mc1/homeconnect_local_hass
+- homeconnect-websocket Python library: https://pypi.org/project/homeconnect-websocket/
+- Home Connect Profile Downloader: https://github.com/bruestel/homeconnect-profile-downloader
+- BSH Home Connect developer portal: https://developer.home-connect.com
