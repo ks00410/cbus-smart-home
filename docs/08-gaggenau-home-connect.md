@@ -1,45 +1,61 @@
-# Integration Research: Gaggenau Oven and Cooktop (Home Connect — Local)
+# Integration Research: Gaggenau Oven and Cooktop (Home Connect — Local WebSocket)
 
 **Integration #:** 8  
-**Device / Service:** Gaggenau oven and cooktop via BSH Home Connect — **local LAN WebSocket**  
+**Device / Service:** Gaggenau oven and cooktop via BSH Home Connect — **local LAN WebSocket, direct from 5500AC**  
 **Last Researched:** 2025  
-**Updated:** Local LAN approach confirmed via `chris-mc1/homeconnect_local_hass` and `homeconnect-websocket` Python library
+**Updated:** WebSocket confirmed viable on LogicMachine/5500AC — no proxy required
 
 ---
 
 ## 1. Integration Method
 
-**Local LAN — Home Connect WebSocket protocol (TLS/PSK or AES).**
+**Local LAN — Home Connect WebSocket protocol (TLS/PSK or AES), implemented directly in Lua on the 5500AC.**
 
-BSH appliances (Gaggenau, Bosch, Siemens, Neff) communicate over the local network using a **WebSocket-based protocol** with per-appliance encryption. This is confirmed by the open-source Home Assistant integration [`homeconnect_local_hass`](https://github.com/chris-mc1/homeconnect_local_hass) and the underlying Python library [`homeconnect-websocket`](https://pypi.org/project/homeconnect-websocket/) (v1.5.4 as of August 2026).
+BSH appliances (Gaggenau, Bosch, Siemens, Neff) communicate over the local network using a **WebSocket-based protocol** with per-appliance encryption. This is confirmed by the open-source HA integration [`homeconnect_local_hass`](https://github.com/chris-mc1/homeconnect_local_hass) and the Python library [`homeconnect-websocket`](https://pypi.org/project/homeconnect-websocket/).
+
+### WebSocket is natively achievable on the 5500AC
+
+Earlier research incorrectly stated that WebSocket is not available in Lua on the 5500AC. This is wrong. Three confirmed references demonstrate WebSocket working directly on LogicMachine:
+
+1. **[`lipp/lua-websockets`](https://github.com/lipp/lua-websockets)** — a pure-Lua WebSocket implementation using `socket.tcp()` from LuaSocket (`client_sync.lua`). All dependencies (`bit`, `socket`, `ssl`) are available on LogicMachine.
+2. **[LogicMachine forum thread #1294](https://forum.logicmachine.net/showthread.php?tid=1294)** — community implementation and discussion of WebSocket on LogicMachine.
+3. **[LogicMachine KB — Casambi integration](https://kb.logicmachine.net/integration/casambi/)** — the **official LogicMachine knowledge base** ships a complete `user.websocket` Lua library. It uses `bit`, `ssl`, `socket`, `encdec`, and `socket.url` — all standard on the 5500AC. This is a first-party reference.
+
+The LogicMachine `user.websocket` library is a self-contained, production-quality WebSocket client implementation. It handles:
+- HTTP upgrade handshake (`Upgrade: websocket`, `Sec-WebSocket-Key`, `Sec-WebSocket-Accept`)
+- Frame encoding and decoding (masking, continuation frames, binary/text)
+- WSS (`wss://`) via `ssl.wrap()` / `ssl.dohandshake()`
+- `connect()`, `send()`, `receive()`, `close()`
 
 ### Protocol details
 
-- **Transport:** WebSocket (ws://)
+- **Transport:** WebSocket (`ws://`) — plain TCP with HTTP upgrade
 - **Encryption:** Two modes depending on appliance generation:
-  - **TLS mode** (newer appliances): TLS with a device-specific PSK (Pre-Shared Key)
-  - **AES mode** (older appliances): AES-CBC with a device-specific key and IV
-- **Encryption credentials:** Retrieved once from the Home Connect cloud via the [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader) tool — downloads a ZIP containing each appliance's `DeviceDescription.xml`, `FeatureMapping.xml`, encryption key, and IV
-- **Discovery:** Appliances advertise themselves via **mDNS/Zeroconf** on the LAN (the HA integration includes a zeroconf discovery step)
-- **Connection:** Persistent WebSocket connection to `ws://<appliance-ip>/`; reconnects automatically on drop
+  - **TLS/PSK mode** (newer appliances): TLS with a per-appliance PSK. This requires `ssl.wrap()` with the PSK parameter — needs verification that the 5500AC's LuaSec build supports PSK ciphersuites (not all do).
+  - **AES mode** (older appliances): AES-CBC envelope encryption *over plain WebSocket*. The WebSocket frame payload is AES-encrypted; the transport itself is plain HTTP upgrade. The `user.aes` library from the Unisenza gold-standard integration handles this directly.
+- **Encryption credentials:** Retrieved once from the Home Connect cloud via the [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader). The downloaded ZIP contains each appliance's `DeviceDescription.xml`, `FeatureMapping.xml`, encryption key, and IV/PSK.
+- **Discovery:** Appliances advertise via mDNS/Zeroconf. For the 5500AC integration, use a static IP (DHCP reservation) and configure it directly.
 
-### Why this cannot be implemented directly in Lua
+### Integration architecture (no proxy needed)
 
-WebSocket is not available as a native library on the C-Bus 5500AC (LogicMachine) Lua environment. The `homeconnect-websocket` protocol also involves TLS with PSK negotiation — not standard HTTPS. This cannot be reproduced in plain Lua.
+```
+5500AC (LogicMachine)
+  └── gaggenau_poll.lua  (resident script, e.g. 30s)
+        └── user.gaggenau → ws://<appliance-ip>/  (persistent or per-poll WebSocket)
+              └── user.websocket  (LogicMachine KB Casambi WebSocket library)
+                    └── socket.tcp() / ssl.wrap()  (LuaSocket / LuaSec)
+```
 
-### Recommended approach: Local HTTP Proxy
+The Unisenza gold-standard pattern (library + thin resident script) applies directly here.
 
-Run a lightweight Python proxy service on a LAN device (NAS, Raspberry Pi, or similar always-on host) that:
-1. Uses `homeconnect-websocket` to maintain a persistent WebSocket connection to each appliance
-2. Exposes a simple HTTP REST endpoint (e.g. `GET /oven/status`, `POST /oven/command`) for the 5500AC to poll
-3. Caches the latest appliance state received via the persistent WebSocket connection
+### PSK TLS caveat
 
-The 5500AC uses `socket.http` to poll the proxy — **identical pattern to the Shelly and OpenSprinkler integrations**. The proxy handles all WebSocket complexity.
+The Home Connect TLS/PSK mode requires the TLS handshake to use PSK ciphersuites (e.g. `TLS_PSK_WITH_AES_128_CBC_SHA`). LuaSec on LogicMachine uses OpenSSL; whether PSK is supported depends on the OpenSSL build. **This must be tested on the actual device.**
 
-This approach:
-- Is **fully local** — no cloud API calls at runtime
-- Is **fast** — WebSocket state updates from the appliance arrive in real time; proxy caches them
-- Is **maintainable** — the `homeconnect-websocket` library is actively maintained on PyPI
+- **If PSK works:** Connect with `ssl.wrap(sock, { protocol = "tlsv1_2", ciphers = "PSK", psk = ... })`
+- **If PSK does not work:** The appliance may fall back to plain WebSocket with AES payload encryption (AES mode) — check the `connectionType` field in the downloaded appliance profile JSON.
+
+For AES-mode appliances, this is straightforward: the `user.aes` library from the Unisenza integration handles the encryption, and the WebSocket layer is plain `ws://`. This is a simpler and more certain path.
 
 ---
 
@@ -47,53 +63,64 @@ This approach:
 
 🏠 **Fully local at runtime — no internet connection required.**
 
-One-time setup steps that do require internet:
+One-time setup that requires internet:
 1. Create a Home Connect account and connect appliances via the Home Connect app (once only)
-2. Run the [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader) to extract appliance profiles (once only, or when re-keying)
+2. Run the [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader) to extract appliance profiles (once only)
 
-After the profiles are downloaded and the proxy is running, **no internet or cloud access is needed** for ongoing operation.
+After profile download, **no internet or cloud access is needed** for ongoing operation.
 
 ---
 
 ## 3. Authentication Method
 
-**Per-appliance PSK or AES key** — static hardware credentials.
+**Per-appliance PSK or AES key** — static hardware credentials from the downloaded profile.
 
-Each appliance has a unique encryption key and (for AES mode) an IV, embedded in its firmware and extractable via the Home Connect Profile Downloader. These credentials are:
-- Downloaded once using the Profile Downloader tool (requires a Home Connect cloud account login, but only once)
-- Stored in the proxy service configuration
-- Used directly by `homeconnect-websocket` to authenticate the WebSocket connection
+Credentials in `user.secrets`:
+```lua
+secrets.gaggenau = {
+  oven_host     = "192.168.1.xx",
+  oven_ha_id    = "Gaggenau-Oven-XXXXXXXXXXXX",
+  oven_key      = "base64-or-hex-key",    -- from profile download
+  oven_iv       = "base64-or-hex-iv",     -- AES mode only
+  oven_mode     = "AES",                  -- "AES" or "TLS"
 
-No ongoing token refresh, OAuth2, or cloud API interaction is required at runtime.
-
-Credentials stored in proxy config (not on the 5500AC):
-```json
-{
-  "oven": {
-    "host": "192.168.1.xx",
-    "psk": "base64-encoded-psk",
-    "ha_id": "Gaggenau-Oven-XXXXXXXXXXXX",
-    "device_description": "path/to/DeviceDescription.xml",
-    "feature_mapping": "path/to/FeatureMapping.xml"
-  }
+  cooktop_host  = "192.168.1.xy",
+  cooktop_ha_id = "Gaggenau-Cooktop-XXXXXXXXXXXX",
+  cooktop_key   = "...",
+  cooktop_iv    = "...",
+  cooktop_mode  = "AES",
 }
 ```
+
+No token refresh, no OAuth2, no expiry management.
 
 ---
 
 ## 4. Polling vs. Event-Driven
 
-**Effectively event-driven** — same pattern as Inception long-poll.
+**Two viable approaches:**
 
-The WebSocket connection delivers appliance state updates in real time as they occur (door opened, programme started, temperature reached, etc.). The proxy caches the latest state and the 5500AC polls the proxy HTTP endpoint at a regular interval (e.g. 30 seconds) to retrieve the cached state.
+### Option A: Per-poll WebSocket connect (simpler, recommended initially)
+- Open a new WebSocket connection on each resident poll cycle
+- Send a status query message, receive the response
+- Close the connection
+- Same pattern as Unisenza / OpenSprinkler — clean and simple
+- Latency: response within one poll interval (e.g. 30 seconds)
 
-For the proxy itself, no polling is needed — it receives push updates from the appliance continuously over the persistent WebSocket.
+### Option B: Persistent WebSocket connection (event-driven, advanced)
+- Open WebSocket once on first poll, keep open in module state (`_ws_conn`)
+- Appliance pushes state change events to the connection in real time
+- Resident script wakes periodically to drain the receive buffer
+- Lower latency; more complex reconnection handling
+- Pattern similar to Inception long-poll
+
+**Recommended:** Start with Option A (per-poll connect) — simpler, easier to debug, lower risk. Upgrade to Option B if real-time response is needed.
 
 ---
 
 ## 5. Available Data / Controllable Parameters
 
-Based on the entity descriptions in [`cooking.py`](https://github.com/chris-mc1/homeconnect_local_hass/blob/main/custom_components/homeconnect_ws/entity_descriptions/cooking.py) and the `homeconnect-websocket` library.
+Based on entity descriptions in [`cooking.py`](https://github.com/chris-mc1/homeconnect_local_hass/blob/main/custom_components/homeconnect_ws/entity_descriptions/cooking.py) and the `homeconnect-websocket` Python library entity key list.
 
 ### Oven
 
@@ -105,21 +132,21 @@ Based on the entity descriptions in [`cooking.py`](https://github.com/chris-mc1/
 | `BSH.Common.Status.DoorState` | Closed / Open / Locked |
 | `BSH.Common.Status.RemoteControlActive` | Boolean — must be true for remote commands |
 | `BSH.Common.Status.RemoteControlStartAllowed` | Boolean |
-| `Cooking.Oven.Status.Cavity.N.CurrentTemperature` | °C — current cavity temperature (per cavity) |
+| `Cooking.Oven.Status.Cavity.N.CurrentTemperature` | °C — current cavity temp (per cavity) |
 | `Cooking.Oven.Status.Cavity.N.WaterTankEmpty` | Boolean |
-| `Cooking.Oven.Event.Cavity.N.AlarmClockElapsed` | Boolean — alarm clock finished |
+| `Cooking.Oven.Event.Cavity.N.AlarmClockElapsed` | Boolean |
 | `Cooking.Oven.Event.Cavity.N.PreheatFinished` | Boolean |
 | `BSH.Common.Root.ActiveProgram` | Currently running programme key |
 | `BSH.Common.Option.RemainingProgramTime` | Seconds remaining |
-| `BSH.Common.Option.Duration` | Programme duration in seconds |
-| `BSH.Common.Option.StartInRelative` | Delayed start offset (seconds) |
+| `BSH.Common.Option.Duration` | Programme duration (seconds) |
+| `BSH.Common.Option.StartInRelative` | Delayed start (seconds) |
 
-**Write (Control — requires `RemoteControlActive = true`):**
+**Write (requires `RemoteControlActive = true`):**
 
 | Action | Entity Key |
 |---|---|
-| Start programme | `BSH.Common.Root.ActiveProgram` with options |
-| Stop programme | `BSH.Common.Root.ActiveProgram` → delete |
+| Start programme | `BSH.Common.Root.ActiveProgram` + options |
+| Stop programme | Delete active programme |
 | Set alarm clock | `Cooking.Oven.Setting.Cavity.N.AlarmClock` |
 | Set child lock | `BSH.Common.Setting.ChildLock` |
 | Set oven light | `Cooking.Oven.Setting.Cavity.N.Light` |
@@ -131,8 +158,7 @@ Based on the entity descriptions in [`cooking.py`](https://github.com/chris-mc1/
 | Entity Key | Notes |
 |---|---|
 | `BSH.Common.Status.OperationState` | Inactive / Run / Error |
-| `BSH.Common.Status.LocalControlActive` | User actively using cooktop |
-| Per-zone heating level | Zone-specific entities from FeatureMapping |
+| `BSH.Common.Status.LocalControlActive` | Boolean — user actively using cooktop |
 
 **Write:**
 
@@ -144,45 +170,45 @@ Based on the entity descriptions in [`cooking.py`](https://github.com/chris-mc1/
 
 ## 6. Estimated Implementation Difficulty
 
-**Proxy service development:** 🟡 **Easy to Medium**
-- `homeconnect-websocket` is pip-installable and well-documented
-- Proxy is a simple Python `asyncio` HTTP server wrapping the WebSocket client
-- One-time profile download setup is required
+🟠 **Medium.**
 
-**C-Bus Lua client:** ✅ **Easy**
-- Standard `socket.http` polling against the proxy endpoint
-- Same pattern as Shelly / OpenSprinkler
+Components:
 
-**Profile download setup:** 🟡 **Easy** (once)
-- Requires a Home Connect account with appliances registered
-- [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader) does the extraction
+| Component | Difficulty | Notes |
+|---|---|---|
+| `user.websocket` library | ✅ Done | Use LogicMachine KB Casambi library verbatim or adapt |
+| AES payload encryption | ✅ Done | Reuse `user.aes` from Unisenza gold-standard |
+| Profile download | ✅ Easy | One-time, desktop tool |
+| PSK/TLS mode | ⚠️ Uncertain | Test on device — may need to fall back to AES mode |
+| Appliance protocol message format | 🟠 Medium | JSON message format needs mapping from `homeconnect-websocket` source |
+| C-Bus resident script | 🟡 Easy | Same pattern as Unisenza |
+| Event script for control | 🟡 Easy | Same pattern as Panasonic event script |
 
-**Overall (proxy approach):** 🟠 **Medium** — infrastructure to set up, but the core protocol library exists and is production-grade.
+The main unknown is the **message format** — the specific JSON request/response schema for querying entity values and sending commands. This must be derived from the `homeconnect-websocket` Python library source code in a future implementation session.
 
 ---
 
 ## 7. Known Limitations and Risks
 
-- **Proxy infrastructure required** — a separate always-on LAN device must run the Python proxy. The same host used for the Apple TV pyatv proxy can serve double duty.
-- **Profile re-download on re-keying** — if BSH ever rotates appliance keys (unlikely but possible), the profile must be re-downloaded. The Profile Downloader tool needs to be re-run, but this is a one-time action.
-- **Remote control safety gate** — the oven only accepts remote programme start commands when the user has physically pressed the "Remote Start" button on the appliance. This is a deliberate safety feature and cannot be bypassed. Monitoring (temperature, door state, programme state) works without this gate.
-- **`RemoteControlActive` check required** — any control command should first verify that `RemoteControlActive` is true; otherwise the command will be rejected by the appliance.
-- **WebSocket reconnection** — the proxy must implement reconnection logic (already provided by the `homeconnect-websocket` library's `ConnectionState.RECONNECTING` callback).
-- **mDNS vs static IP** — the appliance advertises via mDNS. If no mDNS resolver is available on the proxy host, configure a static IP for the appliance and set it explicitly in the proxy config.
-- **AES vs TLS mode** — older Gaggenau models may use AES mode. Confirm the `connectionType` field in the downloaded profile JSON (`"TLS"` or `"AES"`). The `homeconnect-websocket` library supports both.
+- **PSK TLS support uncertain** — if TLS/PSK ciphersuites are not available in the 5500AC's LuaSec build, TLS-mode appliances cannot be connected directly. Mitigation: check the `connectionType` in the downloaded profile — if it is `"AES"`, proceed confidently. If `"TLS"`, test PSK support on the device before committing to this approach.
+- **Remote control safety gate** — the oven only accepts programme start commands when the user has physically pressed "Remote Start" on the appliance. Monitoring works without this.
+- **Message format research needed** — the exact WebSocket JSON protocol (request/response message schema, entity query format, command format) must be mapped from the Python `homeconnect-websocket` source code in a dedicated implementation session.
+- **Static IP required** — assign a DHCP reservation for each appliance to prevent IP changes breaking the integration.
+- **Profile re-download on re-keying** — unlikely but if BSH rotates keys, profiles must be re-downloaded.
+- **`DeviceDescription.xml` / `FeatureMapping.xml`** — these files are required by the library to know which entity keys the specific appliance supports. The relevant entity keys must be extracted from these files and configured in the Lua integration.
 
 ---
 
 ## 8. Recommended C-Bus Group Address Strategy
 
-User Parameters via the proxy HTTP endpoint.
+User Parameters via direct `user.gaggenau` library calls from the resident script.
 
 Suggested naming convention:
 
 ```
 Oven_OperationState   (String — "Inactive" / "Ready" / "Run" / "Finished" / "Error")
 Oven_DoorState        (String — "Closed" / "Open")
-Oven_CurrentTemp      (Number, °C — cavity temperature)
+Oven_CurrentTemp      (Number, °C)
 Oven_Program          (String — active programme name)
 Oven_TimeRemaining    (Number — seconds)
 Oven_PreheatDone      (Number — 0/1)
@@ -200,27 +226,32 @@ Cooktop_LastUpdated    (String)
 
 | Pattern | Source | Applicability |
 |---|---|---|
-| `socket.http` local LAN polling | Inception, Unisenza | Polling the proxy endpoint |
-| `safeSetUserParam` | All gold-standard | Required |
+| `user.websocket` library | LogicMachine KB (Casambi) | Use/adapt this library directly — do not rewrite |
+| `user.aes` AES-256-CBC | Unisenza gold-standard | AES payload encryption for AES-mode appliances |
+| Library + thin resident script | Unisenza gold-standard | `user.gaggenau` + `script_resident_poll.lua` |
+| `safeSetUserParam` / `safeGetUserParam` | All gold-standard | Required |
 | `isDebuggingEnabled` cached per poll | All gold-standard | Required |
 | `_missingParamWarned` | All gold-standard | Required |
-| Proxy architecture | Apple TV (pyatv) | Same pattern — one proxy host, multiple integrations |
+| `user.secrets` isolation | All gold-standard | PSK/AES key storage |
+| Event script for control | Panasonic gold-standard | Same pattern for oven command scripts |
 
 ---
 
 ## Action Required
 
-1. **Download appliance profiles** — install [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader), log in with Home Connect account, download ZIP profiles for oven and cooktop. Select "openHAB" as target format.
-2. **Set up proxy host** — confirm an always-on LAN device (NAS, Pi, etc.) is available. This can be shared with the Apple TV pyatv proxy.
-3. **Install `homeconnect-websocket`** — `pip install homeconnect-websocket` on the proxy host.
-4. **Write proxy service** — Python asyncio HTTP server wrapping `homeconnect_websocket.HomeAppliance`. Expose `GET /oven/status` and `GET /cooktop/status` endpoints returning JSON.
-5. **Write C-Bus Lua integration script** in a future session — standard `socket.http` poll of the proxy endpoint.
+1. **Download appliance profiles** — install [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader), log in with Home Connect account, download ZIP for oven and cooktop. Note the `connectionType` field (`"TLS"` or `"AES"`).
+2. **Test PSK TLS** — if `connectionType = "TLS"`, test on the live 5500AC whether `ssl.wrap()` supports PSK ciphersuites. If not, check whether the appliance supports AES fallback.
+3. **Map WebSocket message format** — read `homeconnect-websocket` Python source to document the exact JSON request/response format for entity queries and control commands.
+4. **Obtain `user.websocket` library** — copy the Casambi WebSocket user library from the [LogicMachine KB](https://kb.logicmachine.net/integration/casambi/) and load it on the 5500AC.
+5. **Write integration script** in a future session — `user.gaggenau` library + thin resident + event script for oven control.
 
 ---
 
 ## Reference
 
+- LogicMachine KB Casambi (official WebSocket example): https://kb.logicmachine.net/integration/casambi/
+- lipp/lua-websockets (pure-Lua WebSocket): https://github.com/lipp/lua-websockets
+- LogicMachine forum WebSocket thread: https://forum.logicmachine.net/showthread.php?tid=1294
 - Home Connect Local HA integration: https://github.com/chris-mc1/homeconnect_local_hass
 - homeconnect-websocket Python library: https://pypi.org/project/homeconnect-websocket/
 - Home Connect Profile Downloader: https://github.com/bruestel/homeconnect-profile-downloader
-- BSH Home Connect developer portal: https://developer.home-connect.com

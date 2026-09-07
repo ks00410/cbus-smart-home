@@ -118,8 +118,8 @@ BOM_LastUpdated
 | Integration | Local/Cloud | R/W | Capabilities |
 |---|---|---|---|
 | **Asko Washing Machine** (ConnectLife) | ☁️ | ✏️ | Running status (Off/Running/Paused/Finished), door locked state, current wash programme, temperature, spin speed, time remaining, cycle complete indicator, error code ⚠️ *Property codes require validation against actual model* |
-| **Gaggenau Oven** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state (Inactive/Ready/Run/Finished/Error), door state (Closed/Open), current cavity temperature, active programme, time remaining, preheat complete, alarm elapsed, remote control active flag, child lock, oven light ⚠️ *Requires proxy service + one-time profile download. Remote start requires physical user authorisation.* |
-| **Gaggenau Cooktop** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state, local control active, child lock ⚠️ *Requires proxy service + one-time profile download* |
+| **Gaggenau Oven** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state (Inactive/Ready/Run/Finished/Error), door state (Closed/Open), current cavity temperature, active programme, time remaining, preheat complete, alarm elapsed, remote control active flag, child lock, oven light ⚠️ *WebSocket direct from 5500AC using LM `user.websocket` library. One-time profile download required. PSK/TLS mode support TBD. Remote start requires physical user authorisation.* |
+| **Gaggenau Cooktop** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state, local control active, child lock ⚠️ *WebSocket direct from 5500AC. One-time profile download required.* |
 | **Reclaim Hot Water** | ☁️/🏠 ⚠️ | ✏️ ⚠️ | Tank temperature, target temperature, heating state (Heating/Standby/Boost), operation mode (Heat Pump/Element), boost active ⚠️ *API discovery required — Modbus preferred if hardware supports it* |
 
 **Washing Machine — C-Bus UserParams:**
@@ -229,7 +229,7 @@ Shelly_LastUpdated
 | 5 | BOM Weather | Weather | ☁️ | 📖 | Easy | Not yet implemented |
 | 6 | Shelly Devices | Lighting | 🏠 | ✏️ | Easy–Medium | Not yet implemented |
 | 7 | Asko Washing Machine | Appliances | ☁️ | ✏️ | Hard | Not yet implemented — API research needed |
-| 8 | Gaggenau Home Connect (Local) | Appliances | 🏠 ⚠️ | ✏️ | Medium | Not yet implemented — profile download + proxy service needed |
+| 8 | Gaggenau Home Connect (Local) | Appliances | 🏠 ⚠️ | ✏️ | Medium | Not yet implemented — profile download + WebSocket message format mapping needed |
 | 9 | Ubiquiti UDM | Presence | 🏠 | 📖 | Medium | Not yet implemented |
 | 10 | LG TV | Entertainment | 🏠 ⚠️ | 📖 | Easy (ping) / Very Hard (full) | Not yet implemented — ping approach first |
 | 11 | Apple TV | Entertainment | 🏠 ⚠️ | ✏️ | Medium (proxy) | Not yet implemented — proxy required |
