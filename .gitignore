@@ -1,0 +1,57 @@
+# =============================================================================
+# .gitignore — C-Bus Lua / LogicMachine Smart Home Integration Project
+# =============================================================================
+
+# --- Secrets & Credentials ---------------------------------------------------
+# NEVER commit real credentials. Use secrets.example.lua as a template only.
+secrets.lua
+user/secrets.lua
+**/secrets.lua
+*.env
+.env.*
+tokens.json
+
+# --- macOS -------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# --- Editor & IDE ------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Python (token generation tools) ----------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# --- Lua compiled artefacts --------------------------------------------------
+*.luac
+
+# --- Temporary & log files ---------------------------------------------------
+*.log
+*.tmp
+*.bak
+*.orig
+
+# --- Dashboard build artefacts -----------------------------------------------
+dashboard/dist/
+dashboard/node_modules/
+dashboard/.cache/
+
+# --- OS thumbnails & metadata ------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
