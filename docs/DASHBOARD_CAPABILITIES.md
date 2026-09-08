@@ -120,7 +120,7 @@ BOM_LastUpdated
 | **Asko Washing Machine** (ConnectLife) | ☁️ | ✏️ | Running status (Off/Running/Paused/Finished), door locked state, current wash programme, temperature, spin speed, time remaining, cycle complete indicator, error code ⚠️ *Property codes require validation against actual model* |
 | **Gaggenau Oven** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state (Inactive/Ready/Run/Finished/Error), door state (Closed/Open), current cavity temperature, active programme, time remaining, preheat complete, alarm elapsed, remote control active flag, child lock, oven light ⚠️ *WebSocket direct from 5500AC using LM `user.websocket` library. One-time profile download required. PSK/TLS mode support TBD. Remote start requires physical user authorisation.* |
 | **Gaggenau Cooktop** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state, local control active, child lock ⚠️ *WebSocket direct from 5500AC. One-time profile download required.* |
-| **Reclaim Hot Water** | ☁️/🏠 ⚠️ | ✏️ ⚠️ | Tank temperature, target temperature, heating state (Heating/Standby/Boost), operation mode (Heat Pump/Element), boost active ⚠️ *API discovery required — Modbus preferred if hardware supports it* |
+| **Reclaim Hot Water** | ☁️ | ✏️ | Tank water temperature (°C), ambient temperature (°C), outlet/inlet temperatures (°C), power (W), current (A), pump/compressor active, boost mode active, operating mode (Mode 1–8 incl. PV Connectivity), compressor speed (RPM), total hours/starts — *Protocol fully known: AWS IoT Core MQTT + Modbus register map. ⚠️ Needs Lua MQTT client on 5500AC confirmed.* |
 
 **Washing Machine — C-Bus UserParams:**
 ```
@@ -139,8 +139,9 @@ Cooktop_OperationState, Cooktop_LastUpdated
 
 **Hot Water — C-Bus UserParams:**
 ```
-HotWater_TankTemp, HotWater_TargetTemp, HotWater_State
-HotWater_Mode, HotWater_BoostActive, HotWater_LastUpdated
+ReclaimHW_TankTemp, ReclaimHW_AmbientTemp, ReclaimHW_OutletTemp
+ReclaimHW_Power, ReclaimHW_PumpActive, ReclaimHW_BoostActive
+ReclaimHW_Mode, ReclaimHW_CompSpeed, ReclaimHW_Hours, ReclaimHW_LastUpdated
 ```
 
 ---
@@ -150,8 +151,8 @@ HotWater_Mode, HotWater_BoostActive, HotWater_LastUpdated
 | Integration | Local/Cloud | R/W | Capabilities |
 |---|---|---|---|
 | **Sonos** | 🏠 | ✏️ | Per-room playback state (Playing/Paused/Idle), per-room volume (0–100), per-room muted state, now-playing track title and artist, streaming service name, active rooms count |
-| **LG TV** | 🏠 ⚠️ | 📖 ⚠️ | Power state (On/Standby — via network ping). Full API (current app, volume, input, control) requires proxy infrastructure ⚠️ |
-| **Apple TV** | 🏠 ⚠️ | ✏️ ⚠️ | Power state, current app, playback state (Playing/Paused/Idle), media title, media type ⚠️ *Requires pyatv proxy service on LAN device* |
+| **LG TV** | 🏠 | ✏️ | Power state (Active/Standby), current app (Netflix/YouTube/Live TV/HDMI etc.), volume (0–100), muted state, on-duration (derived). Full control: power off, input switch, volume, launch app, play/pause. Via WebSocket SSAP direct from 5500AC — one-time TV pairing required. |
+| **Apple TV** | 🏠 ⚠️ | ✏️ ⚠️ | Power state, current app, playback state (Playing/Paused/Idle), media title, media type ⚠️ *MRP protocol is custom binary (not WebSocket) — pyatv proxy service on LAN device still required* |
 
 **Sonos — C-Bus UserParams:**
 ```
@@ -162,7 +163,7 @@ Sonos_ActiveRooms, Sonos_LastUpdated
 
 **LG TV — C-Bus UserParams:**
 ```
-LG_TV_Power, LG_TV_LastSeen, LG_TV_OnDuration
+LG_TV_Power, LG_TV_App, LG_TV_Volume, LG_TV_Muted, LG_TV_OnDuration, LG_TV_LastUpdated
 ```
 
 **Apple TV — C-Bus UserParams:**
@@ -231,11 +232,11 @@ Shelly_LastUpdated
 | 7 | Asko Washing Machine | Appliances | ☁️ | ✏️ | Hard | Not yet implemented — API research needed |
 | 8 | Gaggenau Home Connect (Local) | Appliances | 🏠 ⚠️ | ✏️ | Medium | Not yet implemented — profile download + WebSocket message format mapping needed |
 | 9 | Ubiquiti UDM | Presence | 🏠 | 📖 | Medium | Not yet implemented |
-| 10 | LG TV | Entertainment | 🏠 ⚠️ | 📖 | Easy (ping) / Very Hard (full) | Not yet implemented — ping approach first |
+| 10 | LG TV | Entertainment | 🏠 | ✏️ | Easy–Medium | Not yet implemented — WebSocket SSAP direct from 5500AC, one-time pairing required |
 | 11 | Apple TV | Entertainment | 🏠 ⚠️ | ✏️ | Medium (proxy) | Not yet implemented — proxy required |
 | 12 | Sonos | Entertainment | 🏠 | ✏️ | Easy–Medium | Prototype exists — needs rewrite |
 | 13 | OpenSprinkler | Irrigation | 🏠 | ✏️ | Easy | Prototype exists — needs rewrite |
-| 14 | Reclaim Hot Water | Appliances | ⚠️ | ✏️ | Hard ⚠️ | API discovery required |
+| 14 | Reclaim Hot Water | Appliances | ☁️ | ✏️ | Hard | Protocol fully known (AWS IoT MQTT + Modbus map). ⚠️ Lua MQTT client on LM needs verification |
 | 15 | Sigenergy | Energy | 🏠 | ✏️ | Medium | Modbus profile complete — LM config needed |
 | 16 | SolCast | Energy | ☁️ | 📖 | Easy | Not yet implemented |
 
@@ -268,7 +269,7 @@ Based on difficulty, value, and dependencies:
 12. **LG TV** — ping-only first; proxy if richer data needed
 
 ### Phase 6 — Research-Dependent (pending investigation)
-13. **Reclaim Hot Water** — pending Modbus or API discovery
+13. **Reclaim Hot Water** — protocol known (AWS IoT Core MQTT); pending Lua MQTT client verification on LM
 
 ---
 
@@ -289,7 +290,7 @@ Based on difficulty, value, and dependencies:
 | Apple TV (proxy) | No | N/A |
 | Sonos | No | N/A |
 | OpenSprinkler | No | N/A |
-| Reclaim Hot Water | TBD | Modbus if hardware supports |
+| Reclaim Hot Water | Yes — AWS IoT Core MQTT | None — no local LAN fallback |
 | Sigenergy | No | N/A |
 | SolCast | Yes — always | Cached forecast remains (data ages) |
 
