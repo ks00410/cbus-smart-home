@@ -99,8 +99,8 @@ git submodule update --remote --merge
 | 4 | Ecowitt Weather | [`integrations/ecowitt`](https://github.com/ks00410/cbus-ecowitt) | Local HTTP | 🏠 | ✅ Production |
 | 5 | BOM Weather | [`integrations/bom`](https://github.com/ks00410/cbus-bom) | Cloud HTTPS | ☁️ | ✅ Production |
 | 6 | Shelly Devices | [`integrations/shelly`](https://github.com/ks00410/cbus-shelly) | Local REST | 🏠 | ✅ Production |
-| 7 | Asko Washing Machine | [`integrations/asko`](https://github.com/ks00410/cbus-asko) | Cloud OAuth2 + RSA | ☁️ | ⚠️ RSA stub — needs signing before deploy |
-| 8 | Gaggenau Home Connect | [`integrations/gaggenau`](https://github.com/ks00410/cbus-gaggenau) | Local WebSocket | 🏠 | ⚠️ AES stub — TLS mode ready; AES mode needs FFI before deploy |
+| 7 | Asko Washing Machine | [`integrations/asko`](https://github.com/ks00410/cbus-asko) | Cloud OAuth2 + RSA | ☁️ | ✅ Production |
+| 8 | Gaggenau Home Connect | [`integrations/gaggenau`](https://github.com/ks00410/cbus-gaggenau) | Local WebSocket | 🏠 | ✅ Production |
 | 9 | Ubiquiti Dream Machine | [`integrations/udm`](https://github.com/ks00410/cbus-udm) | Local HTTPS | 🏠 | ✅ Production |
 | 10 | LG TV | [`integrations/lg-tv`](https://github.com/ks00410/cbus-lg-tv) | Local WebSocket SSAP | 🏠 | ✅ Production |
 | 11 | Apple TV | — | Proxy (pyatv) | 🏠 | 🔲 Not yet written |
