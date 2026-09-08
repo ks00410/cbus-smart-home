@@ -1,0 +1,21 @@
+[submodule "integrations/panasonic"]
+	path = integrations/panasonic
+	url = https://github.com/ks00410/cbus-panasonic-comfort-cloud.git
+[submodule "integrations/unisenza"]
+	path = integrations/unisenza
+	url = https://github.com/ks00410/cbus-unisenza.git
+[submodule "integrations/inception"]
+	path = integrations/inception
+	url = https://github.com/ks00410/Cbus-Inception.git
+[submodule "integrations/ecowitt"]
+	path = integrations/ecowitt
+	url = https://github.com/ks00410/cbus-ecowitt.git
+[submodule "integrations/opensprinkler"]
+	path = integrations/opensprinkler
+	url = https://github.com/ks00410/Cbus-OpenSprinkler.git
+[submodule "integrations/sonos"]
+	path = integrations/sonos
+	url = https://github.com/ks00410/cbus-sonos.git
+[submodule "integrations/sigenergy-profile"]
+	path = integrations/sigenergy-profile
+	url = https://github.com/ks00410/sigenergy-modbus-profile.git

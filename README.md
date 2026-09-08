@@ -6,24 +6,13 @@ C-Bus / LogicMachine 5500AC smart home integration project — Lua scripts, rese
 
 ## Overview
 
-This repository houses all Lua integration scripts, research documentation, and dashboard design work for a Clipsal C-Bus 5500AC (LogicMachine OEM) smart home controller. The system integrates a broad range of local and cloud-connected devices and services into a unified smart home dashboard.
+This repository is the central hub for all smart home automation work on a Clipsal C-Bus 5500AC (LogicMachine OEM) controller. It contains:
 
-All Lua scripts target the **C-Bus 5500AC (SpaceLogic NAC)** platform running LogicMachine firmware. Scripts follow the conventions and quality standards established in the gold-standard integration repositories listed below.
+- **`docs/`** — per-integration research documents covering protocol, auth, data model, difficulty, and implementation notes for all 16 integrations
+- **`integrations/`** — each integration as a git submodule, pointing to its own dedicated repository
+- **`dashboard/`** — dashboard design work (future)
 
----
-
-## Gold-Standard References
-
-The following repositories define the code quality, structure, and conventions for all integrations in this project. New scripts must conform to these patterns without exception.
-
-| Repository | Description |
-|---|---|
-| [`cbus-panasonic-comfort-cloud`](https://github.com/ks00410/cbus-panasonic-comfort-cloud) | Cloud OAuth2 API, token management, bi-directional control, energy telemetry |
-| [`Cbus-Inception`](https://github.com/ks00410/Cbus-Inception) | Local LAN REST API, long-poll event monitoring, entity discovery, backoff |
-| [`cbus-unisenza`](https://github.com/ks00410/cbus-unisenza) | Local LAN AES-encrypted API, auto-discovery, resident poll + event scripts |
-| [`Cbus-OpenSprinkler`](https://github.com/ks00410/Cbus-OpenSprinkler) | Local LAN REST API, resident poll, prototype-grade (reference only) |
-| [`Cbus-iZone`](https://github.com/ks00410/Cbus-iZone) | Local LAN, HVAC zone control (prototype — reference only) |
-| [`sigenergy-modbus-profile`](https://github.com/ks00410/sigenergy-modbus-profile) | Modbus TCP/RTU register mappings for Sigenergy ESS |
+All Lua scripts target **C-Bus 5500AC (SpaceLogic NAC)** running LogicMachine firmware, follow shared conventions documented below, and are written in Lua 5.1.
 
 ---
 
@@ -31,11 +20,11 @@ The following repositories define the code quality, structure, and conventions f
 
 ```
 cbus-smart-home/
-├── README.md                        # This file — master project overview
-├── CHANGELOG.md                     # Version history
-├── .gitignore                       # Excludes secrets, build artefacts, OS files
+├── README.md
+├── CHANGELOG.md
+├── .gitmodules                          # Submodule registry
 │
-├── docs/                            # Per-integration research and planning documents
+├── docs/                                # Per-integration research documents
 │   ├── 01-panasonic-heating.md
 │   ├── 02-unisenza-radiators.md
 │   ├── 03-inception-alarm.md
@@ -52,71 +41,92 @@ cbus-smart-home/
 │   ├── 14-reclaim-hot-water.md
 │   ├── 15-sigenergy-modbus.md
 │   ├── 16-solcast.md
-│   └── DASHBOARD_CAPABILITIES.md   # Master capabilities and dashboard data model
+│   └── DASHBOARD_CAPABILITIES.md       # Master data model for dashboard design
 │
-├── integrations/                    # Lua integration scripts (future — not yet written)
-│   └── .gitkeep
+├── integrations/                        # One submodule per integration
+│   ├── panasonic/        → ks00410/cbus-panasonic-comfort-cloud
+│   ├── unisenza/         → ks00410/cbus-unisenza
+│   ├── inception/        → ks00410/Cbus-Inception
+│   ├── ecowitt/          → ks00410/cbus-ecowitt
+│   ├── opensprinkler/    → ks00410/Cbus-OpenSprinkler
+│   ├── sonos/            → ks00410/cbus-sonos
+│   └── sigenergy-profile/→ ks00410/sigenergy-modbus-profile
 │
-└── dashboard/                       # Dashboard design work (future — not yet started)
-    └── .gitkeep
+└── dashboard/                           # Dashboard design (future)
+```
+
+---
+
+## Cloning
+
+Because this repository uses git submodules, always clone with `--recurse-submodules`:
+
+```bash
+git clone --recurse-submodules https://github.com/ks00410/cbus-smart-home.git
+```
+
+If you already cloned without it:
+
+```bash
+git submodule update --init --recursive
+```
+
+To pull the latest commit for all submodules:
+
+```bash
+git submodule update --remote --merge
 ```
 
 ---
 
 ## Integrations
 
-| # | Integration | Method | Local/Cloud | Status |
-|---|---|---|---|---|
-| 1 | Panasonic Heating | Cloud API (Comfort Cloud) | Cloud | Research complete |
-| 2 | Unisenza Radiators | Local LAN (AES HTTP) | Local | Research complete |
-| 3 | Inception Alarm | Local LAN (REST + long-poll) | Local | Research complete |
-| 4 | Ecowitt Weather Station | Local LAN (HTTP push/pull) | Local | Research complete |
-| 5 | BOM Weather | Cloud API | Cloud | Research complete |
-| 6 | Shelly Devices | Local LAN (REST API) | Local | Research complete |
-| 7 | Asko Washing Machine | Cloud API (ConnectLife) | Cloud | Research complete |
-| 8 | Gaggenau Oven & Cooktop | Cloud API (Home Connect) | Cloud | Research complete |
-| 9 | Ubiquiti Dream Machine | Local LAN (UniFi API) | Local | Research complete |
-| 10 | LG TV | Local LAN (LG ThinQ / WebOS) | Local | Research complete |
-| 11 | Apple TV | Local LAN (pyatv protocol) | Local | Research complete |
-| 12 | Sonos | Local LAN (Sonos REST API) | Local | Research complete |
-| 13 | OpenSprinkler | Local LAN (REST API) | Local | Research complete |
-| 14 | Reclaim Hot Water | Cloud API (Reclaim Energy) | Cloud | Research complete |
-| 15 | Sigenergy | Modbus TCP | Local | Research complete |
-| 16 | SolCast | Cloud API | Cloud | Research complete |
+| # | Integration | Submodule | Method | Local/Cloud | Status |
+|---|---|---|---|---|---|
+| 1 | Panasonic Heating | [`integrations/panasonic`](https://github.com/ks00410/cbus-panasonic-comfort-cloud) | Cloud OAuth2 | ☁️ | ✅ Production |
+| 2 | Unisenza Radiators | [`integrations/unisenza`](https://github.com/ks00410/cbus-unisenza) | Local LAN AES | 🏠 | ✅ Production |
+| 3 | Inception Alarm | [`integrations/inception`](https://github.com/ks00410/Cbus-Inception) | Local REST + long-poll | 🏠 | ✅ Production |
+| 4 | Ecowitt Weather | [`integrations/ecowitt`](https://github.com/ks00410/cbus-ecowitt) | Local HTTP | 🏠 | ✅ Production |
+| 5 | BOM Weather | — | Cloud HTTPS | ☁️ | 🔲 Not yet written |
+| 6 | Shelly Devices | — | Local REST | 🏠 | 🔲 Not yet written |
+| 7 | Asko Washing Machine | — | Cloud OAuth2 | ☁️ | 🔲 Not yet written |
+| 8 | Gaggenau Home Connect | — | Local WebSocket | 🏠 | 🔲 Not yet written |
+| 9 | Ubiquiti Dream Machine | — | Local HTTPS | 🏠 | 🔲 Not yet written |
+| 10 | LG TV | — | Local WebSocket | 🏠 | 🔲 Not yet written |
+| 11 | Apple TV | — | Proxy (pyatv) | 🏠 | 🔲 Not yet written |
+| 12 | Sonos | [`integrations/sonos`](https://github.com/ks00410/cbus-sonos) | Local HTTPS | 🏠 | ✅ Production |
+| 13 | OpenSprinkler | [`integrations/opensprinkler`](https://github.com/ks00410/Cbus-OpenSprinkler) | Local HTTP | 🏠 | ✅ Production |
+| 14 | Reclaim Hot Water | — | Cloud MQTT | ☁️ | 🔲 Not yet written |
+| 15 | Sigenergy | [`integrations/sigenergy-profile`](https://github.com/ks00410/sigenergy-modbus-profile) (data) | Modbus TCP | 🏠 | 🔲 Not yet written |
+| 16 | SolCast | — | Cloud HTTPS | ☁️ | 🔲 Not yet written |
 
 ---
 
 ## Lua Scripting Conventions
 
-All scripts in this repository follow the conventions documented in the gold-standard repositories. Key rules:
+All scripts follow a shared 11-section structure and set of conventions:
 
-1. **Module structure** — sections ordered: require → configuration → ID maps → module state → logging helpers → C-Bus I/O helpers → utility functions → derived value functions → HTTP fetch → payload parser → resident poll
+1. **Module structure** — sections in order: `require` → configuration → ID maps → module state → logging helpers → C-Bus I/O helpers → utility functions → derived value functions → HTTP fetch → payload parser → resident poll
 2. **C-Bus I/O** — `GetUserParam` and `SetUserParam` always wrapped in `pcall` via `safeGetUserParam` / `safeSetUserParam`
-3. **Debug logging** — `isDebuggingEnabled()` called once per poll cycle; result cached in `dbg` and passed through to all helpers
-4. **Missing params** — warned once per session via `_missingParamWarned` table; never floods the log
-5. **Secrets** — all credentials stored in `user.secrets` library; never committed to version control
-6. **HTTP** — `socket.http` for plain HTTP (local LAN); `ssl.https` + `ltn12` for HTTPS (cloud APIs)
+3. **Debug logging** — `isDebuggingEnabled()` called **once** per poll cycle; result cached in `dbg` and passed through to all helpers — never called inline inside helpers
+4. **Missing params** — warned once per session via `_missingParamWarned` table
+5. **Secrets** — all credentials in `user.secrets` library; never committed to version control
+6. **HTTP** — `socket.http` for local LAN (plain HTTP); `ssl.https` + `ltn12` for HTTPS (cloud or self-signed LAN)
 7. **Nil safety** — `safeSetUserParam` accepts `nil` as a silent no-op; no nil guards needed at call sites
-8. **Temperature encoding** — temperatures stored as integers ×10 (e.g. 21.5 °C → 215) due to C-Bus integer param constraint
-
----
-
-## Secrets Management
-
-Credentials are stored in a `user.secrets` Lua library loaded into the 5500AC. A `secrets.example.lua` template is provided for each integration. **Never commit a real `secrets.lua` to this repository.**
+8. **Temperature encoding** — stored as integers ×10 (e.g. 21.5 °C → 215) due to C-Bus integer param constraint
 
 ---
 
 ## Platform Notes
 
-- **Controller:** Clipsal C-Bus 5500AC (LogicMachine OEM), any firmware
-- **Lua:** 5.1 compatible
-- **Available libraries:** `socket.http`, `ssl.https`, `ltn12`, `json`, `cjson`, `bit`, `crypto` / `sha2`
-- **Scripting types:** Resident scripts (polling), Event scripts (triggered), User Libraries (shared modules)
-- **User Parameters:** Integer, Boolean, or String — no float support; use ×10 encoding for temperatures
+- **Controller:** Clipsal C-Bus 5500AC (SpaceLogic NAC / LogicMachine OEM)
+- **Lua:** 5.1, LuaJIT FFI available
+- **Libraries:** `socket.http`, `ssl.https`, `ltn12`, `json`, `cjson`, `bit`, `crypto`/`sha2`, `encdec`, `mosquitto`, `user.websocket` (Casambi KB)
+- **Script types:** Resident (polling), Event (triggered on C-Bus group write), User Library (shared module)
+- **User Parameters:** Integer or String — no float; use ×10 encoding for temperatures
 
 ---
 
-## Contributing
+## Secrets Management
 
-All code must pass a manual review against the gold-standard conventions before merge. No new patterns should be introduced without documented justification.
+Credentials are stored in a `user.secrets` Lua library on the 5500AC. Each integration's README documents the required `secrets.*` structure. **Never commit real credentials to any repository.**
