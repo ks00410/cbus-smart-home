@@ -28,3 +28,6 @@
 [submodule "integrations/udm"]
 	path = integrations/udm
 	url = https://github.com/ks00410/cbus-udm.git
+[submodule "integrations/sigenergy"]
+	path = integrations/sigenergy
+	url = https://github.com/ks00410/cbus-sigenergy.git

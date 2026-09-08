@@ -54,6 +54,7 @@ cbus-smart-home/
 │   ├── bom/              → ks00410/cbus-bom
 │   ├── shelly/           → ks00410/cbus-shelly
 │   ├── udm/              → ks00410/cbus-udm
+│   ├── sigenergy/        → ks00410/cbus-sigenergy
 │   └── sigenergy-profile/→ ks00410/sigenergy-modbus-profile
 │
 └── dashboard/                           # Dashboard design (future)
@@ -101,7 +102,7 @@ git submodule update --remote --merge
 | 12 | Sonos | [`integrations/sonos`](https://github.com/ks00410/cbus-sonos) | Local HTTPS | 🏠 | ✅ Production |
 | 13 | OpenSprinkler | [`integrations/opensprinkler`](https://github.com/ks00410/Cbus-OpenSprinkler) | Local HTTP | 🏠 | ✅ Production |
 | 14 | Reclaim Hot Water | — | Cloud MQTT | ☁️ | 🔲 Not yet written |
-| 15 | Sigenergy | [`integrations/sigenergy-profile`](https://github.com/ks00410/sigenergy-modbus-profile) (data) | Modbus TCP | 🏠 | 🔲 Not yet written |
+| 15 | Sigenergy | [`integrations/sigenergy`](https://github.com/ks00410/cbus-sigenergy) | Modbus TCP (event-driven) | 🏠 | ✅ Production |
 | 16 | SolCast | — | Cloud HTTPS | ☁️ | 🔲 Not yet written |
 
 ---
@@ -110,7 +111,7 @@ git submodule update --remote --merge
 
 All scripts follow a shared 11-section structure and set of conventions:
 
-1. **Module structure** — sections in order: `require` → configuration → ID maps → module state → logging helpers → C-Bus I/O helpers → utility functions → derived value functions → HTTP fetch → payload parser → resident poll
+1. **Module structure** — sections in order: `require` → configuration → ID maps → module state → logging helpers → C-Bus I/O helpers → utility functions → derived value functions → fetch/reader → value mapper → resident poll or event entry point
 2. **C-Bus I/O** — `GetUserParam` and `SetUserParam` always wrapped in `pcall` via `safeGetUserParam` / `safeSetUserParam`
 3. **Debug logging** — `isDebuggingEnabled()` called **once** per poll cycle; result cached in `dbg` and passed through to all helpers — never called inline inside helpers
 4. **Missing params** — warned once per session via `_missingParamWarned` table
