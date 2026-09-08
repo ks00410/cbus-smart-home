@@ -19,3 +19,6 @@
 [submodule "integrations/sigenergy-profile"]
 	path = integrations/sigenergy-profile
 	url = https://github.com/ks00410/sigenergy-modbus-profile.git
+[submodule "integrations/bom"]
+	path = integrations/bom
+	url = https://github.com/ks00410/cbus-bom.git
