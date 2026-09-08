@@ -55,6 +55,11 @@ cbus-smart-home/
 │   ├── shelly/           → ks00410/cbus-shelly
 │   ├── udm/              → ks00410/cbus-udm
 │   ├── sigenergy/        → ks00410/cbus-sigenergy
+│   ├── solcast/          → ks00410/cbus-solcast
+│   ├── reclaim/          → ks00410/cbus-reclaim
+│   ├── lg-tv/            → ks00410/cbus-lg-tv
+│   ├── asko/             → ks00410/cbus-asko
+│   ├── gaggenau/         → ks00410/cbus-gaggenau
 │   └── sigenergy-profile/→ ks00410/sigenergy-modbus-profile
 │
 └── dashboard/                           # Dashboard design (future)
@@ -94,16 +99,16 @@ git submodule update --remote --merge
 | 4 | Ecowitt Weather | [`integrations/ecowitt`](https://github.com/ks00410/cbus-ecowitt) | Local HTTP | 🏠 | ✅ Production |
 | 5 | BOM Weather | [`integrations/bom`](https://github.com/ks00410/cbus-bom) | Cloud HTTPS | ☁️ | ✅ Production |
 | 6 | Shelly Devices | [`integrations/shelly`](https://github.com/ks00410/cbus-shelly) | Local REST | 🏠 | ✅ Production |
-| 7 | Asko Washing Machine | — | Cloud OAuth2 | ☁️ | 🔲 Not yet written |
-| 8 | Gaggenau Home Connect | — | Local WebSocket | 🏠 | 🔲 Not yet written |
+| 7 | Asko Washing Machine | [`integrations/asko`](https://github.com/ks00410/cbus-asko) | Cloud OAuth2 + RSA | ☁️ | ⚠️ RSA stub — needs signing before deploy |
+| 8 | Gaggenau Home Connect | [`integrations/gaggenau`](https://github.com/ks00410/cbus-gaggenau) | Local WebSocket | 🏠 | ⚠️ AES stub — TLS mode ready; AES mode needs FFI before deploy |
 | 9 | Ubiquiti Dream Machine | [`integrations/udm`](https://github.com/ks00410/cbus-udm) | Local HTTPS | 🏠 | ✅ Production |
-| 10 | LG TV | — | Local WebSocket | 🏠 | 🔲 Not yet written |
+| 10 | LG TV | [`integrations/lg-tv`](https://github.com/ks00410/cbus-lg-tv) | Local WebSocket SSAP | 🏠 | ✅ Production |
 | 11 | Apple TV | — | Proxy (pyatv) | 🏠 | 🔲 Not yet written |
 | 12 | Sonos | [`integrations/sonos`](https://github.com/ks00410/cbus-sonos) | Local HTTPS | 🏠 | ✅ Production |
 | 13 | OpenSprinkler | [`integrations/opensprinkler`](https://github.com/ks00410/Cbus-OpenSprinkler) | Local HTTP | 🏠 | ✅ Production |
-| 14 | Reclaim Hot Water | — | Cloud MQTT | ☁️ | 🔲 Not yet written |
+| 14 | Reclaim Hot Water | [`integrations/reclaim`](https://github.com/ks00410/cbus-reclaim) | Cloud MQTT (AWS IoT) | ☁️ | ✅ Production |
 | 15 | Sigenergy | [`integrations/sigenergy`](https://github.com/ks00410/cbus-sigenergy) | Modbus TCP (event-driven) | 🏠 | ✅ Production |
-| 16 | SolCast | — | Cloud HTTPS | ☁️ | 🔲 Not yet written |
+| 16 | SolCast | [`integrations/solcast`](https://github.com/ks00410/cbus-solcast) | Cloud HTTPS | ☁️ | ✅ Production |
 
 ---
 

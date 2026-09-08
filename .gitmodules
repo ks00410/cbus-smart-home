@@ -31,3 +31,18 @@
 [submodule "integrations/sigenergy"]
 	path = integrations/sigenergy
 	url = https://github.com/ks00410/cbus-sigenergy.git
+[submodule "integrations/solcast"]
+	path = integrations/solcast
+	url = https://github.com/ks00410/cbus-solcast.git
+[submodule "integrations/reclaim"]
+	path = integrations/reclaim
+	url = https://github.com/ks00410/cbus-reclaim.git
+[submodule "integrations/lg-tv"]
+	path = integrations/lg-tv
+	url = https://github.com/ks00410/cbus-lg-tv.git
+[submodule "integrations/asko"]
+	path = integrations/asko
+	url = https://github.com/ks00410/cbus-asko.git
+[submodule "integrations/gaggenau"]
+	path = integrations/gaggenau
+	url = https://github.com/ks00410/cbus-gaggenau.git
