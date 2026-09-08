@@ -28,7 +28,7 @@ The Sonos Local Control API provides:
 - `POST /api/v1/households/<hhId>/groups/<groupId>/playback/skipToNextTrack` — skip
 - `GET /api/v1/households/<hhId>/groups/<groupId>/playbackMetadata` — now-playing metadata
 
-The API also supports SSE subscriptions (`/subscribe`) for real-time push updates, but as with Home Connect SSE, this is difficult to consume from Lua on the 5500AC.
+The API also supports SSE subscriptions (`/subscribe`) for real-time push updates. SSE is **not** WebSocket — it is chunked HTTP transfer encoding (HTTP/1.1 `Transfer-Encoding: chunked` with `text/event-stream` content type). While the LogicMachine `user.websocket` library is now confirmed available on the 5500AC, it handles WebSocket frames (RFC 6455) — it cannot consume SSE streams, which have a completely different framing model. Polling via the REST endpoints remains the correct and practical approach for Sonos.
 
 **Alternative: UPnP / SOAP (Legacy, simpler)**
 Older Sonos UPnP API on port 1400 uses SOAP XML. More verbose to implement but HTTP-based and compatible with `socket.http`. Some Home Assistant integrations still use this for simplicity. The gold-standard approach uses REST over HTTP; UPnP/SOAP is not recommended for new implementations.

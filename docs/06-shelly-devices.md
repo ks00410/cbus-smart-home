@@ -157,7 +157,7 @@ Shelly_Kitchen_Watts      (Number)
 Shelly_Kitchen_Energy_Wh  (Number)
 Shelly_Garage_Power       (Number)
 Shelly_Laundry_Power      (Number)
-Shelly_TempSensor1_Temp   (Number, ×10)
+Shelly_TempSensor1_Temp   (Float, °C)
 Shelly_TempSensor1_Humid  (Number, %)
 Shelly_LastUpdated        (String)
 ```

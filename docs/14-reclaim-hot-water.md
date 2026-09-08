@@ -182,9 +182,9 @@ The data parsing is straightforward — JSON decode + flat register dictionary l
 ## 8. Recommended C-Bus UserParam Strategy
 
 ```
-ReclaimHW_TankTemp       (Number, ×10 °C — e.g. 215 = 21.5°C)
-ReclaimHW_AmbientTemp    (Number, ×10 °C)
-ReclaimHW_OutletTemp     (Number, ×10 °C)
+ReclaimHW_TankTemp       (Float, °C — e.g. 21.5)
+ReclaimHW_AmbientTemp    (Float, °C)
+ReclaimHW_OutletTemp     (Float, °C)
 ReclaimHW_Power          (Number, W)
 ReclaimHW_PumpActive     (Number — 0/1)
 ReclaimHW_BoostActive    (Number — 0/1)

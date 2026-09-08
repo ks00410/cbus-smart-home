@@ -53,8 +53,8 @@ The gateway API is pure request/response with no push capability. A 30-second in
 
 | Parameter | C-Bus UserParam | Notes |
 |---|---|---|
-| Room temperature | `NAME_CurrentTemp` | Integer ×10 (e.g. 142 = 14.2 °C) |
-| Heating setpoint | `NAME_Setpoint` | Integer ×10 — writable |
+| Room temperature | `NAME_CurrentTemp` | Float °C (e.g. 14.2) |
+| Heating setpoint | `NAME_Setpoint` | Float °C — writable |
 | Hold type | `NAME_HoldType` | 0=Schedule, 1=Temp, 2=Hold, 7=Off, 10=Eco |
 | Heating demand | `NAME_Demand` | 0–100 % |
 | Online status | `NAME_Online` | 1=online, 0=offline |
@@ -71,7 +71,7 @@ The gateway API is pure request/response with no push capability. A 30-second in
 
 | Action | Method |
 |---|---|
-| Set room temperature | Write `NAME_Setpoint` (×10 integer) — event script calls `unisenza.set_temperature()` |
+| Set room temperature | Write `NAME_Setpoint` (Float °C) — event script calls `unisenza.set_temperature()` |
 | Change mode (schedule / eco / off) | Write `NAME_HoldType` — event script calls `unisenza.set_hold()` |
 
 **Device auto-discovery** — no static device list needed. All radiators discovered on each first poll and logged with name, UID, and model.
@@ -91,7 +91,7 @@ For any extension (e.g. schedule read/write, additional sensor types): **Medium*
 - **EUID required** — the gateway EUID must be read from the hardware sticker. There is no online lookup or recovery mechanism if the sticker is damaged.
 - **Fixed IV** — the protocol uses a hardcoded IV, which is a known weakness of this manufacturer's implementation. This is not a risk in a trusted LAN environment.
 - **Zigbee mesh stability** — radiators marked `Online=0` have lost their Zigbee connection to the gateway. May require repositioning of gateway or radiator.
-- **Temperature resolution** — setpoints are rounded to the nearest 0.5 °C. Values stored ×10 as integers.
+- **Temperature resolution** — setpoints are rounded to the nearest 0.5 °C.
 - **No scheduling API** — the Lua API supports Hold modes only; schedule read/write is not reverse-engineered.
 - **Min/max setpoint enforcement** — the library clamps setpoints to `device.min_sp` / `device.max_sp` as reported by the gateway (typically 5–30 °C).
 
@@ -99,13 +99,13 @@ For any extension (e.g. schedule read/write, additional sensor types): **Medium*
 
 ## 8. Recommended C-Bus Group Address Strategy
 
-Primary storage is via User Parameters (integer type). Temperature values are stored ×10 to preserve one decimal place precision within the C-Bus integer constraint.
+Primary storage is via User Parameters (Float type for temperatures). Native float support on the 5500AC means temperatures are stored as raw °C values.
 
 Naming convention (already in use):
 
 ```
-Romy_CurrentTemp      (Number, ×10)
-Romy_Setpoint         (Number, ×10 — write to control)
+Romy_CurrentTemp      (Float, °C)
+Romy_Setpoint         (Float, °C — write to control)
 Romy_HoldType         (Number)
 Romy_Demand           (Number, 0–100)
 Romy_Online           (Number, 0/1)

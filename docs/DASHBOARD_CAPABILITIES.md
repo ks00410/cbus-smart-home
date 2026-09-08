@@ -18,7 +18,7 @@ This document summarises all metrics and controls that will be available on the 
 | Integration | Local/Cloud | R/W | Capabilities |
 |---|---|---|---|
 | **Panasonic Heating** (Comfort Cloud) | ☁️ | ✏️ | Power on/off, target temperature, inside/outside temperature, operation mode (Heat/Cool/Auto/Dry/Fan), fan speed, eco mode (Powerful/Quiet), vertical/horizontal swing, Nanoe purification, EcoNavi, iAuto-X, inside cleaning, HVAC action state (Heating/Cooling/Idle/Off), active zone count, per-zone on/off and damper %, per-zone temperature, daily energy (kWh), heating/cooling energy split (kWh), extrapolated live power (W), last updated timestamp |
-| **Unisenza Radiators** | 🏠 | ✏️ | Per-room current temperature (×10 °C), per-room setpoint (×10 °C, writable), hold type (Schedule/Permanent/Eco/Off), heating demand (0–100%), online/offline state, device count, poll status |
+| **Unisenza Radiators** | 🏠 | ✏️ | Per-room current temperature (°C), per-room setpoint (°C, writable), hold type (Schedule/Permanent/Eco/Off), heating demand (0–100%), online/offline state, device count, poll status |
 
 **Panasonic — C-Bus UserParams:**
 ```
@@ -301,7 +301,7 @@ Based on difficulty, value, and dependencies:
 ## Notes
 
 - **Dashboard layout design** is a separate future task — this document defines the data model only, not the visual layout.
-- Temperature values stored as integers ×10 in all C-Bus UserParams to preserve decimal precision.
+- Temperature and other decimal values stored as native Float user parameters — no ×10 encoding needed.
 - All timestamps stored as formatted strings (e.g. `"05 Jun 2025, 14:32"`).
 - All "uncertain" (⚠️) capabilities require additional investigation before implementation commitments can be made.
 - C-Bus UserParam names above are suggestions — review and adjust naming conventions before implementation to ensure consistency across the full dashboard.

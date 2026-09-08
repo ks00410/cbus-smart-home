@@ -24,13 +24,13 @@ Audio streaming. Not useful for status monitoring.
 ### HomeKit (tvOS 11+)
 Apple TV is a HomeKit hub and exposes a HomeKit Accessory Protocol (HAP) interface. State monitoring via HomeKit is possible but requires HAP implementation in Lua (very complex).
 
+**WebSocket evaluation:** The LogicMachine `user.websocket` library is confirmed available on the 5500AC. However, the Apple TV MRP protocol is **not WebSocket** — it is a custom binary TCP protocol using **SRP (Secure Remote Password) authentication** and **Protocol Buffer (protobuf) serialisation**. There is no WebSocket handshake or frame layer. The `user.websocket` library cannot communicate with MRP directly. A proxy remains required.
+
 **Recommended approach for C-Bus:**
 
 The most practical integration path is an **HTTP proxy service** using the Python library [`pyatv`](https://pyatv.dev) running on a LAN device (NAS, Raspberry Pi, or always-on computer). `pyatv` abstracts the MRP protocol and exposes a simple REST API via the companion `atvremote` HTTP server mode.
 
 The 5500AC then polls the HTTP proxy with `socket.http` — same pattern as Shelly/OpenSprinkler.
-
-**Alternative:** Network presence (ping) for power state only, identical to the LG TV approach. Simple but limited.
 
 ---
 

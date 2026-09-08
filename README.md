@@ -113,7 +113,7 @@ All scripts follow a shared 11-section structure and set of conventions:
 5. **Secrets** — all credentials in `user.secrets` library; never committed to version control
 6. **HTTP** — `socket.http` for local LAN (plain HTTP); `ssl.https` + `ltn12` for HTTPS (cloud or self-signed LAN)
 7. **Nil safety** — `safeSetUserParam` accepts `nil` as a silent no-op; no nil guards needed at call sites
-8. **Temperature encoding** — stored as integers ×10 (e.g. 21.5 °C → 215) due to C-Bus integer param constraint
+8. **Type safety** — use Float params for numeric values with decimal precision (temperatures, pressures, power readings); use Integer for whole-number values; use String for text
 
 ---
 
@@ -123,7 +123,7 @@ All scripts follow a shared 11-section structure and set of conventions:
 - **Lua:** 5.1, LuaJIT FFI available
 - **Libraries:** `socket.http`, `ssl.https`, `ltn12`, `json`, `cjson`, `bit`, `crypto`/`sha2`, `encdec`, `mosquitto`, `user.websocket` (Casambi KB)
 - **Script types:** Resident (polling), Event (triggered on C-Bus group write), User Library (shared module)
-- **User Parameters:** Integer or String — no float; use ×10 encoding for temperatures
+- **User Parameters:** Boolean, Integer (32-bit signed or unsigned), **Float (32-bit)**, String (255 bytes), and more — native float support means no ×10 integer encoding is required
 
 ---
 

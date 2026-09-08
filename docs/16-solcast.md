@@ -141,14 +141,14 @@ The polling frequency management (rate limit guard) is the only notable complexi
 ## 8. Recommended C-Bus Group Address Strategy
 
 ```
-SolCast_Now_kW            (Number, ×100 — current period forecast kW, e.g. 234 = 2.34 kW)
-SolCast_TodayTotal_kWh    (Number, ×10)
-SolCast_TodayRemaining_kWh (Number, ×10 — remaining generation today)
-SolCast_TomorrowTotal_kWh (Number, ×10)
+SolCast_Now_kW            (Float, kW — current period forecast, e.g. 2.34)
+SolCast_TodayTotal_kWh    (Float, kWh)
+SolCast_TodayRemaining_kWh (Float, kWh — remaining generation today)
+SolCast_TomorrowTotal_kWh (Float, kWh)
 SolCast_PeakTime          (String — "13:30" — time of peak generation)
-SolCast_PeakKW            (Number, ×100)
-SolCast_Confidence10_kW   (Number, ×100 — pessimistic)
-SolCast_Confidence90_kW   (Number, ×100 — optimistic)
+SolCast_PeakKW            (Float, kW)
+SolCast_Confidence10_kW   (Float, kW — pessimistic)
+SolCast_Confidence90_kW   (Float, kW — optimistic)
 SolCast_LastFetched       (String — timestamp of last API call)
 SolCast_ForecastAge_Hrs   (Number — hours since last fetch)
 ```

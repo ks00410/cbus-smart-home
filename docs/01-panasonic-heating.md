@@ -122,7 +122,7 @@ Suggested User Parameter naming convention (already in use):
 
 ```
 AC_Power              (Number, 0/1)
-AC_TargetTemp         (Number, ×10 for display if needed, or raw °C)
+AC_TargetTemp         (Float, °C)
 AC_InsideTemp         (Number)
 AC_OutsideTemp        (Number)
 AC_Mode               (Number)

@@ -139,25 +139,25 @@ A full gold-standard script can be written in a single session, modelling the se
 
 ## 8. Recommended C-Bus Group Address Strategy
 
-All weather data stored as User Parameters on network 0. Temperature and pressure values stored as integers ×10 where decimal precision is needed.
+All weather data stored as User Parameters on network 0. Decimal values stored as native Float parameters — no ×10 encoding required.
 
 Suggested naming convention:
 
 ```
-Weather_OutdoorTemp       (Number, ×10 — e.g. 214 = 21.4°C)
+Weather_OutdoorTemp       (Float, °C — e.g. 21.4)
 Weather_OutdoorHumidity   (Number, %)
-Weather_FeelsLike         (Number, ×10 — derived)
-Weather_DewPoint          (Number, ×10 — derived)
-Weather_WindSpeed         (Number, ×10 knots or km/h)
+Weather_FeelsLike         (Float, °C — derived)
+Weather_DewPoint          (Float, °C — derived)
+Weather_WindSpeed         (Float, knots or km/h)
 Weather_WindDirection     (Number, degrees)
-Weather_WindGust          (Number, ×10)
+Weather_WindGust          (Float, knots or km/h)
 Weather_GustAlert         (Number, 0/1)
-Weather_RainRate          (Number, ×10 mm/hr)
-Weather_RainDaily         (Number, ×10 mm)
-Weather_Pressure          (Number, ×10 hPa)
+Weather_RainRate          (Float, mm/hr)
+Weather_RainDaily         (Float, mm)
+Weather_Pressure          (Float, hPa)
 Weather_PressureTrend     (String — "Rising Rapidly" etc.)
-Weather_SolarRadiation    (Number, W/m²)
-Weather_UVIndex           (Number, ×10)
+Weather_SolarRadiation    (Float, W/m²)
+Weather_UVIndex           (Float)
 Weather_LastUpdated       (String)
 Soil1_Moisture            (Number, %)
 Soil2_Moisture            (Number, %)

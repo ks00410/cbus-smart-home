@@ -218,7 +218,7 @@ Asko_DeviceStatus      (String — "standby" / "running" / "pause" / "program_fi
 Asko_ProgramPhase      (String — "wash" / "rinsing" / "spinning" / "finished" etc.)
 Asko_SelectedProgram   (String — programme name)
 Asko_TimeRemaining     (Number — minutes)
-Asko_WaterTemp         (Number, ×10 °C — e.g. 600 = 60°C)
+Asko_WaterTemp         (Float, °C — e.g. 60.0)
 Asko_DoorOpen          (Number — 0/1)
 Asko_WashFinished      (Number — 0/1, flag cleared on next start)
 Asko_FilterWarning     (Number — 0/1)

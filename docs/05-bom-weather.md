@@ -140,19 +140,19 @@ The primary complexity is selecting the correct geohash for the location and par
 
 ## 8. Recommended C-Bus Group Address Strategy
 
-Forecast and observation data stored as User Parameters. Temperature values stored as ×10 integers. String forecasts stored as String params.
+Forecast and observation data stored as User Parameters. Decimal values stored as native Float parameters. String forecasts stored as String params.
 
 Suggested naming convention:
 
 ```
-BOM_CurrentTemp          (Number, ×10)
-BOM_FeelsLike            (Number, ×10)
+BOM_CurrentTemp          (Float, °C)
+BOM_FeelsLike            (Float, °C)
 BOM_Humidity             (Number, %)
 BOM_WindSpeed            (Number, km/h)
 BOM_WindDirection        (Number, degrees)
 BOM_WindGust             (Number, km/h)
-BOM_Pressure             (Number, ×10 hPa)
-BOM_RainSince9am         (Number, ×10 mm)
+BOM_Pressure             (Float, hPa)
+BOM_RainSince9am         (Float, mm)
 BOM_Forecast_Today       (String — "Mostly Sunny")
 BOM_Forecast_TodayMax    (Number, °C)
 BOM_Forecast_TodayMin    (Number, °C)

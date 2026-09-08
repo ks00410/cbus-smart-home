@@ -3,140 +3,197 @@
 **Integration #:** 10  
 **Device / Service:** LG Smart TV — usage and watch-time metrics capture  
 **Last Researched:** 2025  
+**Updated:** LG WebOS SSAP is plain WebSocket JSON — direct integration from 5500AC confirmed viable
 
 ---
 
 ## 1. Integration Method
 
-**Local LAN — LG WebOS TV REST API (LG Connect Apps / SSAP protocol).**
+**Local LAN — LG WebOS SSAP (Simple Service Access Protocol) over WebSocket.**
 
-LG Smart TVs running WebOS (2014+) expose a WebSocket-based control API called **SSAP** (Simple Service Access Protocol) on port 3000. This API is used by the LG ThinQ app and is available over the local network.
+LG Smart TVs running WebOS (2014+) expose a JSON-over-WebSocket control API on port 3000. This is the same API used by the LG ThinQ app and all community WebOS clients.
 
-**Connection:** WebSocket to `ws://<tv-ip>:3000`  
-**Protocol:** JSON messages over WebSocket
+**Connection:** `ws://<tv-ip>:3000`  
+**Protocol:** JSON messages over plain WebSocket (RFC 6455)
 
-This is **not** a REST API and not directly accessible via Lua's `socket.http`. Lua on the 5500AC does not have a native WebSocket client library. Options:
+Earlier research incorrectly stated that this was not accessible from the 5500AC without a proxy. With the **LogicMachine `user.websocket` library** (confirmed available from the official KB Casambi integration), the SSAP protocol can be implemented directly in Lua — **no proxy required**.
 
-### Option A: LG ThinQ Cloud API
-LG's cloud API (`openapi.thinq1.com` / `thinq2-kr.lgthinq.com`) can be used to query TV status and send some commands. However:
-- Authentication is complex (requires app client tokens and country-specific endpoints)
-- Cloud-dependent
-- Not well-documented for TVs specifically
-- More commonly used for white goods (washing machines, fridges)
+### SSAP protocol overview
 
-### Option B: LG WebOS REST via `webosTVcontrol` or equivalent HTTP polling
-Some LG WebOS TVs also respond to basic HTTP requests on port 8080 for status queries in older firmware. This is unreliable across models.
+SSAP is a simple request/response and subscription protocol over WebSocket:
 
-### Option C: Network Presence + Power State Inference
-The simplest and most reliable approach: **detect TV presence via network ping or ARP**. When the TV is on, it maintains a network connection and responds to ping. When off (standby), it typically does not respond (unless Wake-on-LAN is enabled).
+**1. Pairing (first connection only)**
+```json
+// Send:
+{ "type": "register", "id": "reg0", "payload": { "forcePairing": false, "pairingType": "PROMPT", "manifest": { "appId": "cbus-integration", "vendorId": "cbus", "clientKey": "" } } }
 
-- Ping `<tv-ip>` — if response received, TV is on; no response, TV is off.
-- Lua `os.execute("ping -c1 -W1 <ip> > /dev/null 2>&1")` returns exit code 0 if up, non-zero if down.
-- This provides a reliable **power on/off state** without requiring WebSocket.
+// TV displays a prompt — user must accept
+// Response includes a client key to store for future connections:
+{ "type": "registered", "payload": { "client-key": "xxxxxxxx" } }
+```
 
-### Option D: WebSocket via Intermediate Proxy
-An intermediate service (e.g. a small Python script or Node.js server running on a Raspberry Pi or NAS on the LAN) can bridge WebSocket to HTTP REST, allowing the 5500AC to use standard HTTP polling against the proxy. This adds infrastructure complexity but enables full LG API access.
+**2. Subsequent connections (using stored client key)**
+```json
+{ "type": "register", "id": "reg0", "payload": { "client-key": "stored-client-key" } }
+// Response: { "type": "registered" } — no prompt shown
+```
 
-**Recommended approach (pragmatic):** Start with **Option C (network presence / ping)** for power state. If richer data (current app, volume, input) is needed, implement **Option D (proxy bridge)** in a later phase.
+**3. Sending commands / queries**
+```json
+// Request:
+{ "type": "request", "id": "cmd1", "uri": "ssap://com.webos.service.tvpower/getPowerState" }
+
+// Response:
+{ "type": "response", "id": "cmd1", "payload": { "state": "Active" } }
+```
+
+**4. Subscribing to state changes**
+```json
+// Subscribe to foreground app changes:
+{ "type": "subscribe", "id": "sub1", "uri": "ssap://com.webos.applicationManager/getForegroundAppInfo" }
+
+// Response comes immediately and again every time the app changes:
+{ "type": "response", "id": "sub1", "payload": { "appId": "netflix", "windowId": "" } }
+```
+
+The synchronous `user.websocket` library handles this cleanly — connect, send a JSON register message, receive the response, send queries, receive responses, close.
+
+### Integration architecture
+
+```
+5500AC (LogicMachine)
+  └── lg_tv_poll.lua  (resident script, e.g. 30s)
+        └── user.lg_tv → ws://<tv-ip>:3000
+              └── user.websocket  (LogicMachine KB Casambi library)
+                    └── socket.tcp()  (LuaSocket — plain WS, no SSL)
+```
+
+No SSL is required — the SSAP protocol uses plain WebSocket (`ws://`), not WSS. This is the simpler path for `user.websocket`.
+
+### Client key management
+
+The client key returned on first pairing is stored in `user.secrets` and used for all subsequent connections. It persists indefinitely unless the TV's connected devices list is cleared.
+
+One-time pairing requires a user to accept the prompt on the TV. This can be done from any WebSocket client (e.g. browser DevTools or `wscat`) once, saving the returned key before the Lua integration is deployed.
 
 ---
 
 ## 2. Connectivity Requirement
 
-🏠 **Fully local — no internet connection required** for network ping approach.  
-☁️ **Internet required** for LG ThinQ cloud API approach.
-
-The network ping approach requires only that the TV and the 5500AC are on the same LAN.
+🏠 **Fully local — no internet connection required.**  
+All SSAP communication is directly to the TV on the LAN.
 
 ---
 
 ## 3. Authentication Method
 
-**WebSocket API (if used):** First connection to the TV requires a **pairing handshake** — the TV displays a prompt asking the user to accept or deny the connection request. Once accepted, a **client key** is returned and stored. Subsequent connections use this client key to skip the pairing prompt.
+**Client key** — obtained from a one-time pairing handshake.
 
-**Network ping approach:** No authentication required.
+Store in `user.secrets`:
+```lua
+secrets.lg_tv = {
+  host       = "192.168.1.xx",
+  client_key = "xxxxxxxx"   -- obtained from first-time pairing
+}
+```
+
+No token refresh or expiry management — the client key is permanent until revoked.
 
 ---
 
 ## 4. Polling vs. Event-Driven
 
-**Polling** — 60-second resident script interval.
+**Per-poll connect** (simpler, recommended initially):
+- Open WebSocket connection on each resident poll cycle (e.g. every 30 seconds)
+- Authenticate with stored client key
+- Send queries for power state, current app, volume
+- Close connection
 
-For power state via ping: a 30–60 second ping poll is appropriate for a "is the TV on?" indicator. False negatives may occur briefly when the TV is in standby but the network interface is still active.
+**Persistent connection with subscriptions** (advanced):
+- Keep connection open in module state (`_ws`)
+- Subscribe to `getForegroundAppInfo` and volume changes
+- Drain receive buffer on each resident poll cycle
+- Reconnect on error
+
+**Recommended:** Start with per-poll connect — simpler and easier to debug. The SSAP protocol handles rapid connect/disconnect gracefully.
 
 ---
 
 ## 5. Available Data / Controllable Parameters
 
-### Via Network Ping (Recommended for initial implementation)
+### Read
 
-| Metric | Notes |
-|---|---|
-| TV power state | 0=off/standby, 1=on (network reachable) |
-| Last state change timestamp | Derived — log when state transitions between on/off |
+| SSAP URI | Data | Notes |
+|---|---|---|
+| `ssap://com.webos.service.tvpower/getPowerState` | Power state | `"Active"` / `"Suspend"` / `"Active Standby"` |
+| `ssap://com.webos.applicationManager/getForegroundAppInfo` | Current app ID | e.g. `"netflix"`, `"youtube.leanback.v4"`, `"com.webos.app.livetv"` |
+| `ssap://audio/getVolume` | Volume + muted state | `{ "volume": 42, "muted": false }` |
+| `ssap://tv/getChannelList` | Channel list | Array of channels |
+| `ssap://tv/getCurrentChannel` | Current channel | Name, number |
+| `ssap://com.webos.service.update/getCurrentSWInformation` | Firmware version | |
+| `ssap://system/getSystemInfo` | Model name, serial | |
 
-### Via WebSocket SSAP (Full API — requires proxy or native WebSocket support)
+### Write (Control)
 
-| Metric | Notes |
-|---|---|
-| Power state | On / Off / Standby |
-| Current input source | HDMI1, HDMI2, TV, etc. |
-| Current app | YouTube, Netflix, Disney+, Live TV, etc. |
-| Volume level | 0–100 |
-| Muted state | Boolean |
-| Channel (if TV tuner active) | Channel number and name |
-| 3D mode | Boolean (older models) |
-
-### Write (Control — WebSocket SSAP)
-
-| Action | SSAP URI |
-|---|---|
-| Power off | `ssap://system/turnOff` |
-| Change input | `ssap://tv/switchInput` |
-| Set volume | `ssap://audio/setVolume` |
-| Mute/unmute | `ssap://audio/setMute` |
-| Launch app | `ssap://system.launcher/launch` |
-| Play/Pause | `ssap://media.controls/play`, `/pause` |
-| Send remote key | `ssap://com.webos.service.ime/sendEnterKey` etc. |
+| SSAP URI | Action | Notes |
+|---|---|---|
+| `ssap://system/turnOff` | Power off | Sends TV to standby |
+| `ssap://tv/switchInput` | Change input source | `{ "inputId": "HDMI_1" }` |
+| `ssap://audio/setVolume` | Set volume | `{ "volume": 30 }` |
+| `ssap://audio/setMute` | Mute/unmute | `{ "mute": true }` |
+| `ssap://system.launcher/launch` | Launch app | `{ "id": "netflix" }` |
+| `ssap://system.launcher/close` | Close current app | |
+| `ssap://media.controls/play` | Play | |
+| `ssap://media.controls/pause` | Pause | |
+| `ssap://media.controls/rewind` | Rewind | |
+| `ssap://media.controls/fastForward` | Fast forward | |
+| `ssap://com.webos.service.tvpower/powerOff` | Hard power off | |
+| `ssap://com.webos.applicationManager/getForegroundAppInfo` | (subscribe) | Real-time app changes |
 
 ---
 
 ## 6. Estimated Implementation Difficulty
 
-**Network ping approach:** ✅ **Easy** — single `os.execute` call, no API, no parsing.
+🟡 **Easy to Medium** — material downgrade from the previous "Very Hard (proxy)" assessment.
 
-**Full WebSocket SSAP integration (with proxy):** 🔴 **Very Hard** — requires:
-- Intermediate proxy service (additional infrastructure)
-- Proxy development and maintenance
-- WebSocket pairing and client key management
-- Not native to 5500AC Lua environment
+| Component | Difficulty | Notes |
+|---|---|---|
+| `user.websocket` library | ✅ Done | Already available from Casambi KB example |
+| SSAP JSON protocol | ✅ Easy | Simple JSON request/response — no binary framing |
+| Client key pairing (one-time) | ✅ Easy | One `wscat` or browser DevTools session |
+| `user.secrets` key storage | ✅ Easy | Same pattern as all gold-standard integrations |
+| App ID → display name mapping | 🟡 Easy | Static lookup table for known apps |
+| Per-poll resident script | ✅ Easy | Same Unisenza pattern |
+| Event script for control | ✅ Easy | Same Panasonic pattern |
 
-**Recommendation:** Implement network ping for power state first. Document proxy approach for future phase if richer data is required.
+The main task is writing the `user.lg_tv` library with SSAP command helpers and app ID mapping.
 
 ---
 
 ## 7. Known Limitations and Risks
 
-- **Network ping limitations** — TV may remain network-reachable for a short period after power-off due to network standby. Conversely, some TVs go into deep sleep and stop responding to pings while still "available" via WoL. A consistent pattern must be established through testing.
-- **WebOS not accessible from Lua** — without a proxy bridge, full TV API control/monitoring is not achievable from the 5500AC Lua environment.
-- **LG ThinQ cloud API complexity** — the cloud API is documented but uses a multi-step authentication with country-specific server selection and app signing. It is disproportionately complex for a TV on/off indicator.
-- **Model variation** — SSAP API capabilities vary between WebOS versions (WebOS 1.x through WebOS 23+). Test against the specific TV model.
+- **One-time pairing required** — the TV must be physically accessible and powered on for the initial pairing. A WebSocket client (browser DevTools, `wscat`, or any WS tool) is used to perform pairing once and save the client key.
+- **TV must be on for WebSocket connection** — SSAP is not accessible when the TV is in deep standby (hard off). Quick Start or network standby must be enabled in TV settings for the WebSocket port to remain reachable. Test this on the specific TV model.
+- **App ID mapping** — app IDs are internal strings (e.g. `"youtube.leanback.v4"`) that must be mapped to human-readable names. A static lookup table covers the common apps; unknown IDs are logged as-is.
+- **WebOS version variation** — available SSAP URIs vary between WebOS versions (1.x through 24.x). Test the specific TV model for supported URIs.
+- **Plain WebSocket, no SSL** — SSAP uses `ws://` not `wss://`. This is by design and avoids any LuaSec PSK/cert complications.
+- **Model-specific features** — some SSAP URIs (e.g. picture settings, sound output) are model-dependent. Stick to the core URIs documented above for maximum compatibility.
 
 ---
 
 ## 8. Recommended C-Bus Group Address Strategy
 
-```
-LG_TV_Power          (Number — 0=off, 1=on)
-LG_TV_LastSeen       (String — last time TV was detected as on)
-LG_TV_OnDuration     (Number — minutes TV has been continuously on — derived)
-```
+User Parameters via direct `user.lg_tv` calls from the resident script.
 
-If proxy-based full integration is implemented later:
+Suggested naming convention:
+
 ```
-LG_TV_Input          (String — "HDMI1", "Netflix", etc.)
-LG_TV_Volume         (Number)
-LG_TV_App            (String)
+LG_TV_Power          (String — "Active" / "Standby")
+LG_TV_App            (String — "Netflix" / "YouTube" / "Live TV" / "HDMI 1" etc.)
+LG_TV_Volume         (Number — 0–100)
+LG_TV_Muted          (Number — 0/1)
+LG_TV_OnDuration     (Number — minutes TV has been continuously on — derived)
+LG_TV_LastUpdated    (String)
 ```
 
 ---
@@ -145,16 +202,31 @@ LG_TV_App            (String)
 
 | Pattern | Source | Applicability |
 |---|---|---|
-| `os.execute` for system ping | Standard Lua | Trivial — no library needed |
-| Module state for on-duration tracking | Panasonic `_energyState` pattern | Track `_tv_on_since` timestamp |
+| `user.websocket` library | LogicMachine KB (Casambi) | Use directly — plain WS, no SSL |
+| Library + thin resident script | Unisenza gold-standard | `user.lg_tv` + `script_resident_poll.lua` |
+| `user.secrets` for client key | All gold-standard | Store `client_key` and `host` |
 | `safeSetUserParam` | All gold-standard | Required |
 | `isDebuggingEnabled` cached per poll | All gold-standard | Required |
+| `_missingParamWarned` | All gold-standard | Required |
+| Module state for duration tracking | Panasonic `_energyState` pattern | `_tv_on_since` timestamp |
+| ID map with unknown ID fallback | Ecowitt/Inception pattern | App ID → display name lookup table |
+| Event script for control | Panasonic gold-standard | TV control commands from C-Bus events |
 
 ---
 
 ## Action Required
 
-1. **Implement network ping approach** first — confirm that the TV IP is stable (DHCP reservation recommended) and that it responds to ping when on and does not when off/standby.
-2. **Test standby behaviour** — determine whether the TV remains pingable in standby mode (some LG TVs do with Quick Start enabled). Adjust detection logic if needed.
-3. **Evaluate proxy option** — if usage/watch-time metrics (current app, duration per app) are required, design a lightweight proxy service (Python + aiohttp on a NAS or Pi).
-4. **Write integration script** in a future session.
+1. **Assign DHCP reservation** for the TV to ensure IP stability.
+2. **Enable Quick Start / network standby** on the TV so the WebSocket port remains reachable when in standby.
+3. **Perform one-time SSAP pairing** — use a WebSocket client (e.g. browser DevTools → WS, or `wscat -c ws://<tv-ip>:3000`) to send the register message and save the returned `client-key` to `user.secrets`.
+4. **Build app ID lookup table** — turn on the TV and query `getForegroundAppInfo` whilst opening common apps to capture the app IDs for Netflix, YouTube, Apple TV, Disney+, Live TV, HDMI inputs, etc.
+5. **Write integration script** in a future session — `user.lg_tv` library + thin resident + optional event script for control.
+
+---
+
+## Reference
+
+- LG WebOS SSAP protocol overview: https://webostv.developer.lge.com/develop/app-developer-guide/connection-guide
+- LG WebOS service list: https://webostv.developer.lge.com/api/web-api/service-api-overview
+- aiopylgtv (Python client — good SSAP reference): https://github.com/bendavid/aiopylgtv
+- Home Assistant WebOS TV integration: https://github.com/home-assistant/core/tree/dev/homeassistant/components/webostv
