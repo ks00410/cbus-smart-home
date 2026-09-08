@@ -1,160 +1,216 @@
 # Integration Research: Asko Washing Machine (ConnectLife)
 
 **Integration #:** 7  
-**Device / Service:** Asko washing machine via ConnectLife cloud platform  
-**Last Researched:** 2025  
+**Device / Service:** Asko Pro Washing Machine via ConnectLife cloud platform  
+**Last Researched:** 2025-06  
+**Research sources:** [`oyvindwe/connectlife-ha`](https://github.com/oyvindwe/connectlife-ha) (HA HACS, 292 stars, 64 contributors, v0.46.0); [`oyvindwe/connectlife`](https://github.com/oyvindwe/connectlife) (Python API library)
 
 ---
 
 ## 1. Integration Method
 
-**Cloud API — ConnectLife REST API.**
+**Cloud API — ConnectLife / HijuConn gateway, OAuth2 + request signing.**
 
-Asko appliances (washing machines, dryers, dishwashers) connect to the cloud via the **ConnectLife** platform, which is a Haier-owned appliance connectivity ecosystem. Asko is a brand owned by Gorenje/Haier Group.
+Asko is a brand owned by Gorenje/Haier Group. Asko appliances connect to the ConnectLife cloud platform. The `oyvindwe/connectlife-ha` integration has fully reverse-engineered the protocol — this doc is derived directly from that source.
 
-### ConnectLife API
+### Protocol Summary
 
-ConnectLife exposes a documented (though not publicly published) REST API used by the ConnectLife mobile app. Several open-source implementations exist, most notably the Home Assistant [ConnectLife integration](https://github.com/oyvindwe/connectlife-ha).
+The auth flow is a **three-step chain**, then all device calls go through the HijuConn gateway with a signed payload:
 
-**Base URL:** `https://connectlife.haier.com`  
-**Authentication:** Username/password → OAuth2 access token + refresh token  
-**Key endpoints:**
-- `GET /api/v1/appliance` — list of registered appliances with device IDs
-- `GET /api/v1/appliance/<device_id>/status` — current appliance status
-- `PUT /api/v1/appliance/<device_id>/command` — send control commands
+1. **Gigya login** — POST email/password to `https://accounts.eu1.gigya.com/accounts.login` with `APIKey = 4_yhTWQmHFpZkQZDSV1uV-_A` → returns `UID` and `sessionInfo.cookieValue` (login token)
+2. **Gigya JWT** — POST login token to `https://accounts.eu1.gigya.com/accounts.getJWT` → returns `id_token`
+3. **OAuth2 authorise** — POST JWT + UID to `https://oauth.hijuconn.com/oauth/authorize` with `client_id = 5065059336212` → returns `code`
+4. **Token exchange** — POST code to `https://oauth.hijuconn.com/oauth/token` with `client_secret = 07swfKgvJhC3ydOUS9YV_SwVz0i4LKqlOLGNUukYHVMsJRF1b-iWeUGcNlXyYCeK` → returns `access_token` + `refresh_token`
 
-Appliance status is represented as a flat key-value map of **property codes** (e.g. `f54` = wash program, `f11` = door locked). The property codes are appliance-specific and documented in the ConnectLife HA integration's device YAML files.
+**Token refresh:** POST to `/oauth/token` with `grant_type=refresh_token`. Falls back to full re-login if refresh fails.
 
-**Asko W/M property codes (examples from ConnectLife HA):**
+### HijuConn Gateway
 
-| Code | Description | Values |
+All device requests go through `https://clife-eu-gateway.hijuconn.com`:
+
+| Endpoint | Method | Purpose |
 |---|---|---|
-| `f11` | Door lock | 0=unlocked, 1=locked |
-| `f37` | Program | 0=cotton, 1=synthetics, etc. |
-| `f38` | Temperature | Numeric °C |
-| `f40` | Spin speed | rpm |
-| `f47` | Running status | 0=off, 1=running, 2=paused, etc. |
-| `f54` | Time remaining | Minutes |
-| `f103` | Wash complete notification | 0/1 |
+| `/clife-svc/pu/get_device_status_list` | GET | List all appliances + current status |
+| `/device/pu/property/set` | POST | Update appliance property |
+| `/clife-svc/pu/energyConsumptionCurve` | POST | Energy/water usage statistics |
 
-> **Note:** Property codes vary between appliance models. The ConnectLife HA integration maintains a community-sourced YAML dictionary of codes per model. Check the HA integration repository for the specific Asko washing machine model in use.
+### Request Signing
+
+Every gateway request includes a **SHA-256 + RSA-PKCS1v15 signature**:
+1. Sort all payload keys alphabetically (excluding `sign`), build `key=value&key=value` string
+2. Append the constant suffix `D9519A4B756946F081B7BB5B5E8D1197`
+3. SHA-256 hash the string
+4. RSA-PKCS1v15 encrypt the hash with a hardcoded 2048-bit public key (in `api.py`)
+5. Base64-encode the result → `sign` field
+
+Each request also includes a per-request nonce `randStr` (32 random hex chars). The gateway rejects duplicate nonces.
+
+**⚠️ The RSA signing step requires an RSA implementation.** The 5500AC has `crypto` (OpenSSL bindings) and `encdec` available — RSA PKCS1v15 encryption is technically possible but non-trivial. This is the primary implementation complexity.
+
+### Device Identity
+
+The **ASKO Pro Washing Machine** has:
+- `deviceTypeCode = "003"`
+- `deviceFeatureCode = "000"`
+
+These are confirmed in [`DEVICES.md`](https://github.com/oyvindwe/connectlife-ha/blob/main/DEVICES.md). The device list response includes a `puid` (per-unit ID) used for all subsequent calls.
 
 ---
 
 ## 2. Connectivity Requirement
 
-☁️ **Internet connection required.**  
-The ConnectLife API is a cloud service. There is no known local LAN API or Zigbee/Z-Wave radio in Asko appliances for local control. An internet connection is required for all status polling and control.
+☁️ **Internet connection required** — ConnectLife is a fully cloud-based platform. There is no local LAN API.
 
 ---
 
 ## 3. Authentication Method
 
-**OAuth2** — username/password login to obtain access and refresh tokens.
+**Gigya SSO → HijuConn OAuth2 → gateway access token.**
 
-Flow:
-1. `POST /api/v1/user/login` with email and password → returns `access_token` and `refresh_token`
-2. Access token used as `Bearer` in all subsequent requests
-3. Refresh token used to obtain new access token when expired
-
-The access token expires (typically in hours). The Lua library must implement token refresh using the same pattern as the Panasonic integration (`P.RefreshAccessToken()`).
-
-Credentials stored in `user.secrets`:
+Credentials in `user.secrets`:
 ```lua
 secrets.connectlife = {
   email         = "your@email.com",
   password      = "your-password",
-  device_id     = "your-appliance-device-id",
-  access_token  = "",   -- populated after first login
-  refresh_token = ""    -- populated after first login
+  -- populated at runtime, persisted across polls:
+  access_token  = "",
+  refresh_token = "",
+  token_expiry  = 0,   -- Unix timestamp
+  puid          = "",  -- discovered from device list on first run
 }
 ```
 
-> **Initial token generation** — as with Panasonic, a Python helper script (run on a desktop) should be used to perform the initial login and save the refresh token. The 5500AC then uses the refresh token to maintain a valid session.
+The access token has an `expires_in` field (seconds). Renew 90 seconds before expiry (per HA integration logic). Persist tokens between polls using `safeSetUserParam` on the `user.secrets` library object — same pattern as Panasonic.
+
+> **Initial token generation:** The three-step Gigya → OAuth2 chain is complex. A Python helper script (using the `connectlife` library) should be run once on a desktop to generate the initial `refresh_token`, which is then stored in `user.secrets`. The 5500AC only needs to perform the `refresh_token` grant going forward, falling back to full re-login if refresh fails.
 
 ---
 
 ## 4. Polling vs. Event-Driven
 
-**Polling** — relatively low frequency appropriate.
+**Polling** — ConnectLife offers no push/webhook.
 
-The ConnectLife API does not offer push notifications or webhooks. Recommended polling intervals:
-- **When appliance is idle:** Every 5 minutes (no useful state change expected)
-- **When appliance is running:** Every 60 seconds (to track time remaining and program state)
+| Appliance state | Interval |
+|---|---|
+| Idle / Off | Every 5 minutes |
+| Running (mid-cycle) | Every 60 seconds |
+| Finished (until acknowledged) | Every 5 minutes |
 
-Implement a **state-aware polling interval** — if the last status showed `running_status = running`, poll every 60 seconds; if `off`, poll every 5 minutes. This reduces unnecessary API calls. Use module-level state (`_lastStatus`) to track the previous state between polls.
+Track `_lastStatus = DeviceStatus` in module state to implement state-aware interval switching. This mirrors the HA coordinator logic (30s active / 5min idle for Reclaim).
 
 ---
 
 ## 5. Available Data / Controllable Parameters
 
-### Read (Status)
+All property names below are taken directly from [`003.yaml`](https://github.com/oyvindwe/connectlife-ha/blob/main/custom_components/connectlife/data_dictionaries/003.yaml). The API returns these as a flat key-value map per device (`statusList`).
 
-| Metric | Notes |
+### Core Status (Read)
+
+| Property | Description | Values |
+|---|---|---|
+| `DeviceStatus` | Machine state | 0=standby, 1=program_select, 2=running, 3=pause, 4=permanent_error, 5=temporary_error, 8=program_finished |
+| `DoorStatus` | Door open/closed | 0=closed, 1=open |
+| `CurrentProgramPhase` | Active cycle phase | 0=delay, 1=prewash, 2=wash, 3=rinsing, 4=spinning, 5=anti_crease, 6=drain_water, 7=stop_program, 8=cooling, 12=finished |
+| `SelectedProgram` | Active programme name | String (programme name from device) |
+| `ProgramRemainingTime` | Time to end | Minutes (read-only) |
+| `CurrentWaterTemperature` | Current water temp | °C (read-only) |
+| `SpinTime` | Spin duration | Minutes (read-only) |
+| `AlarmWashFinished` | Cycle complete flag | 0/1 |
+| `TotalProgramCycles` | Lifetime cycle count | Integer (total increasing) |
+
+### Alerts / Diagnostics (Read)
+
+| Property | Description |
 |---|---|
-| Running status | Off / Running / Paused / Finished / Error |
-| Door locked | Boolean |
-| Current wash program | String (Cotton, Synthetics, Delicates, etc.) |
-| Wash temperature | °C |
-| Spin speed | RPM |
-| Time remaining | Minutes |
-| Wash complete / cycle end | Boolean / notification flag |
-| Error code | Numeric — look up in model documentation |
+| `AlarmCleanFilterWarning` | Filter cleaning required |
+| `AlarmFillAdContainer1Warning` | Detergent container 1 empty |
+| `AlarmFillAdContainer2Warning` | Detergent container 2 (fabric softener) empty |
+| `AlarmFoamDetection` | Excess foam detected |
+| `AlarmPowerFailAlert` | Power failure occurred |
+| `Error0`…`Error47` | Specific fault codes (optional, model-dependent) |
+| `FailureReadOut1`…`10` | Failure history with last-cycle and repetition count |
 
-### Write (Control)
+### Configurable / Writable
 
-| Action | Notes |
+| Property | Description | Values |
+|---|---|---|
+| `AddClothes` | Allow adding clothes mid-cycle | switch (0/1) |
+| `AllergyModeEnable` | Allergy rinse mode | switch |
+| `ColdWash` | Force cold wash | switch |
+| `ChildLockEnabled` | Child lock | switch |
+| `ExtraRinse` | Extra rinse cycle | switch |
+| `HeatingSteps` | Gradual heating enabled | switch |
+| `Load` | Load size | 0=25%, 1=50%, 2=100% |
+| `SetMaxMotorSpeed` | Max spin speed | 0=reserved, 1=no_drain, 2=no_spin, 3=100rpm … 16=1600rpm |
+| `ProgramOptionTimeStartDelayHour` | Delay start hours | 0–24 h |
+| `StartDelayFunction` | Enable delay start | switch |
+| `Sound` / `Volume` | Audible alerts | switch / level 1–5 |
+| `Brightness` | Display brightness | level 1–5 |
+
+### Energy / Statistics (Read — via `energyConsumptionCurve` endpoint)
+
+| Metric | Description |
 |---|---|
-| Start wash | Requires program, temperature, spin selection |
-| Pause / Resume | |
-| Cancel / Stop | |
-| Set program parameters | Program, temperature, spin speed |
-| Delay start | Set timer for future start |
-
-> **Practical limitation:** Start commands require the door to be physically closed and loaded. In practice, the dashboard is more useful for **monitoring** (is the wash done? time remaining?) than for remote start.
+| `electricUsage` | kWh for period |
+| `waterUsage` | Litres for period |
+| `runTimes` | Runtime hours |
+| `cycles` | Cycle count for period |
+| `electricCurve` | Per-day kWh breakdown |
+| `waterCurve` | Per-day water breakdown |
 
 ---
 
 ## 6. Estimated Implementation Difficulty
 
-🟠 **Hard.**
+🟠 **Hard** — primarily due to the RSA request signing requirement.
 
-Challenges:
-- ConnectLife API is not officially documented for third parties; reverse-engineered from app traffic and the Home Assistant integration.
-- Property codes are model-specific and require mapping from the HA integration YAML files.
-- OAuth2 token management must be implemented from scratch (no existing gold-standard equivalent for this platform).
-- API may change without notice as it is a private commercial platform.
-- Login endpoint and token format have changed at least once; the HA integration has had breaking changes.
+### Why Hard
 
-**Recommended approach for initial implementation:** Read-only monitoring only (running status, time remaining, cycle complete). Control can be added in a later phase.
+The gateway signing step (SHA-256 + RSA-PKCS1v15 + Base64) requires RSA encryption. On the 5500AC:
+- `crypto` library exposes OpenSSL via `ffi` — RSA operations are possible but require writing FFI bindings to `EVP_PKEY` / `RSA_public_encrypt`
+- `encdec` covers AES and base64 but likely not RSA
+
+This is the **critical gate**: can RSA PKCS1v15 encryption be performed in Lua on LM without a pre-existing library? If not, a thin proxy (same pattern as Apple TV) is required.
+
+**Alternative approach — proxy:** A minimal Python script on the home server handles auth + signing and exposes a simple `GET /status` / `POST /set` HTTP endpoint that the 5500AC polls with plain `socket.http`. This isolates all cryptographic complexity off the 5500AC entirely and is likely the practical path.
+
+### Once Transport is Solved
+
+After auth + signing, everything else is straightforward:
+- Device list: JSON array, find `deviceTypeCode == "003"`, extract `puid` and `statusList`
+- Status parse: flat key→value map, use property names from `003.yaml` above
+- Control: POST `{"puid": "...", "properties": {"PropertyName": "value"}}` to the update endpoint
+- No binary protocols, no WebSocket, no MQTT
 
 ---
 
 ## 7. Known Limitations and Risks
 
-- **Undocumented API** — no official developer agreement or stability guarantees. API changes may break the integration without warning.
-- **Cloud dependency** — no local fallback whatsoever.
-- **Password storage** — requires storing ConnectLife account password (or tokens derived from it) on the 5500AC in `user.secrets`. Use a dedicated account if possible.
-- **Property code fragmentation** — appliance property codes are model-specific. Codes must be validated against the actual Asko model; the wrong codes will return null or incorrect values.
-- **Rate limits** — ConnectLife does not publish rate limits. Excessive polling may result in temporary blocks.
-- **Limited practical control value** — the washing machine must be physically loaded and set up before a remote start is useful. Monitoring (finished notification) is the primary value.
-- **Appliance must be "connected"** — the appliance must be registered in the ConnectLife app and connected to Wi-Fi.
+- **RSA signing on LM** — the critical unknown. If `crypto`/`ffi` cannot handle RSA PKCS1v15, a proxy is required.
+- **Three-step auth chain** — Gigya SSO → OAuth2 → gateway is more complex than Panasonic's two-step. The initial token acquisition must be done via external Python helper.
+- **Undocumented API** — private commercial platform; endpoints or signing may change. The HA integration has had breaking auth changes at least once in its history.
+- **Cloud dependency** — no local fallback. All data unavailable if ConnectLife cloud is down.
+- **Property codes are named (not short codes)** — unlike prior doc's `f47` etc., the actual API uses full PascalCase names (`DeviceStatus`, `DoorStatus`). The old property code format was incorrect — the data dictionary (`003.yaml`) has the authoritative names.
+- **`puid` must be discovered** — the per-unit device ID is only available after calling the device list endpoint. Must be persisted to `user.secrets` after first successful poll.
+- **Rate limits** — ConnectLife does not publish limits. Respect the 5-minute idle interval.
 
 ---
 
-## 8. Recommended C-Bus Group Address Strategy
-
-User Parameters — monitoring only to start with.
-
-Suggested naming convention:
+## 8. Recommended C-Bus UserParam Strategy
 
 ```
-WashingMachine_Status     (String — "Off" / "Running" / "Paused" / "Finished")
-WashingMachine_Program    (String — "Cotton 60°C")
-WashingMachine_TimeLeft   (Number — minutes remaining)
-WashingMachine_DoorLocked (Number — 0/1)
-WashingMachine_Complete   (Number — 0/1, set to 1 when cycle ends, reset on next start)
-WashingMachine_LastUpdated (String)
+Asko_DeviceStatus      (String — "standby" / "running" / "pause" / "program_finished")
+Asko_ProgramPhase      (String — "wash" / "rinsing" / "spinning" / "finished" etc.)
+Asko_SelectedProgram   (String — programme name)
+Asko_TimeRemaining     (Number — minutes)
+Asko_WaterTemp         (Number, ×10 °C — e.g. 600 = 60°C)
+Asko_DoorOpen          (Number — 0/1)
+Asko_WashFinished      (Number — 0/1, flag cleared on next start)
+Asko_FilterWarning     (Number — 0/1)
+Asko_DetergentWarning  (Number — 0/1, either container)
+Asko_EnergyKwh         (Number — kWh this week)
+Asko_WaterLitres       (Number — litres this week)
+Asko_LastUpdated       (String)
 ```
 
 ---
@@ -163,27 +219,33 @@ WashingMachine_LastUpdated (String)
 
 | Pattern | Source | Applicability |
 |---|---|---|
-| OAuth2 token refresh | Panasonic gold-standard | Adapt `P.RefreshAccessToken()` pattern |
-| `ssl.https` + `ltn12` HTTPS | Panasonic gold-standard | Required |
-| `safeSetUserParam` | All gold-standard | Required |
-| `isDebuggingEnabled` cached per poll | All gold-standard | Required |
-| State-aware polling interval | Derived value functions pattern | Module-level `_lastStatus` state |
-| `user.secrets` isolation | All gold-standard | Required — password or tokens |
+| OAuth2 token refresh loop | Panasonic gold-standard | Adapt `P.RefreshAccessToken()` — similar structure |
+| `ssl.https` + `ltn12` | Panasonic gold-standard | All HTTPS requests |
+| `safeSetUserParam` / `safeGetUserParam` | All gold-standard | Required |
+| `isDebuggingEnabled()` cached per poll | All gold-standard | Required |
+| `user.secrets` | All gold-standard | Tokens + puid |
+| Library + thin resident script | Panasonic / Unisenza | Required |
+| RSA PKCS1v15 via `crypto`/`ffi` | TBD — new pattern | Required for signing, or use proxy |
 
 ---
 
-## Action Required
+## 10. Action Required Before Implementation
 
-1. **Confirm Asko model number** — find the model number to look up the correct property codes in the ConnectLife HA integration YAML files.
-2. **Register and test ConnectLife account** — ensure the appliance is visible in the ConnectLife app before attempting API integration.
-3. **Identify property codes** — cross-reference the HA integration YAML dictionary for the specific Asko model.
-4. **Write Python token helper** — implement initial login on a desktop to generate the first refresh token.
-5. **Implement as read-only monitoring first** — status, time remaining, and cycle-complete notification are the highest-value use cases.
-6. **Write integration script** in a future session — this research plus the HA integration source code is sufficient to proceed.
+1. **Resolve RSA signing gate** — test whether `crypto` + `ffi` can perform RSA PKCS1v15 public-key encryption on LM Lua 5.1. If yes, signing can be done on-device. If no, implement thin Python proxy.
+2. **Confirm Asko model number** — ensure the physical machine is an "ASKO Pro" series (device type `003`, feature `000`). Other Asko models may use different device type codes.
+3. **Generate initial tokens** — run `python -m connectlife` from `oyvindwe/connectlife` on a desktop, capture `access_token` + `refresh_token`, store in `user.secrets`.
+4. **Discover `puid`** — call `get_device_status_list`, find the `003` device, extract and persist `puid`.
+5. **Implement read-only monitoring first** — `DeviceStatus`, `CurrentProgramPhase`, `ProgramRemainingTime`, `AlarmWashFinished` are the highest-value properties.
+6. **Energy stats** — implement `energyConsumptionCurve` polling separately (daily, not per-status-poll).
+7. **Write integration script** once RSA transport gate is resolved.
 
 ---
 
 ## Reference
 
-- Home Assistant ConnectLife integration: https://github.com/oyvindwe/connectlife-ha
-- ConnectLife API client (Python): https://github.com/oyvindwe/python-connectlife-api
+- [`oyvindwe/connectlife-ha`](https://github.com/oyvindwe/connectlife-ha) — Home Assistant HACS integration (primary source, 292 stars)
+- [`oyvindwe/connectlife`](https://github.com/oyvindwe/connectlife) — Python API library (auth + gateway logic)
+- [`api.py`](https://github.com/oyvindwe/connectlife/blob/main/connectlife/api.py) — full auth chain, gateway signing, endpoints
+- [`003.yaml`](https://github.com/oyvindwe/connectlife-ha/blob/main/custom_components/connectlife/data_dictionaries/003.yaml) — ASKO washing machine property dictionary
+- [`003-000.yaml`](https://github.com/oyvindwe/connectlife-ha/blob/main/custom_components/connectlife/data_dictionaries/003-000.yaml) — ASKO Pro device entry (uses default mappings)
+- [`DEVICES.md`](https://github.com/oyvindwe/connectlife-ha/blob/main/DEVICES.md) — device type/feature code registry

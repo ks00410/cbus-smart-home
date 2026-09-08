@@ -117,15 +117,17 @@ BOM_LastUpdated
 
 | Integration | Local/Cloud | R/W | Capabilities |
 |---|---|---|---|
-| **Asko Washing Machine** (ConnectLife) | ☁️ | ✏️ | Running status (Off/Running/Paused/Finished), door locked state, current wash programme, temperature, spin speed, time remaining, cycle complete indicator, error code ⚠️ *Property codes require validation against actual model* |
+| **Asko Washing Machine** (ConnectLife) | ☁️ | ✏️ | Machine state (standby/running/pause/program_finished), current programme phase (prewash/wash/rinsing/spinning/finished), selected programme name, time remaining (min), current water temperature (°C), door open, wash finished flag, filter/detergent warnings, error codes, weekly energy (kWh) + water (litres) via `energyConsumptionCurve` — *Protocol fully known: Gigya SSO → HijuConn OAuth2 → signed gateway. ⚠️ RSA PKCS1v15 signing on LM is the implementation gate.* |
 | **Gaggenau Oven** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state (Inactive/Ready/Run/Finished/Error), door state (Closed/Open), current cavity temperature, active programme, time remaining, preheat complete, alarm elapsed, remote control active flag, child lock, oven light ⚠️ *WebSocket direct from 5500AC using LM `user.websocket` library. One-time profile download required. PSK/TLS mode support TBD. Remote start requires physical user authorisation.* |
 | **Gaggenau Cooktop** (Home Connect Local) | 🏠 ⚠️ | ✏️ | Operation state, local control active, child lock ⚠️ *WebSocket direct from 5500AC. One-time profile download required.* |
 | **Reclaim Hot Water** | ☁️ | ✏️ | Tank water temperature (°C), ambient temperature (°C), outlet/inlet temperatures (°C), power (W), current (A), pump/compressor active, boost mode active, operating mode (Mode 1–8 incl. PV Connectivity), compressor speed (RPM), total hours/starts — *Protocol fully known: AWS IoT Core MQTT + Modbus register map. ⚠️ Needs Lua MQTT client on 5500AC confirmed.* |
 
 **Washing Machine — C-Bus UserParams:**
 ```
-WashingMachine_Status, WashingMachine_Program, WashingMachine_TimeLeft
-WashingMachine_DoorLocked, WashingMachine_Complete, WashingMachine_LastUpdated
+Asko_DeviceStatus, Asko_ProgramPhase, Asko_SelectedProgram
+Asko_TimeRemaining, Asko_WaterTemp, Asko_DoorOpen
+Asko_WashFinished, Asko_FilterWarning, Asko_DetergentWarning
+Asko_EnergyKwh, Asko_WaterLitres, Asko_LastUpdated
 ```
 
 **Oven — C-Bus UserParams:**
@@ -229,7 +231,7 @@ Shelly_LastUpdated
 | 4 | Ecowitt Weather | Weather | 🏠 | 📖 | Easy | Prototype exists — needs rewrite |
 | 5 | BOM Weather | Weather | ☁️ | 📖 | Easy | Not yet implemented |
 | 6 | Shelly Devices | Lighting | 🏠 | ✏️ | Easy–Medium | Not yet implemented |
-| 7 | Asko Washing Machine | Appliances | ☁️ | ✏️ | Hard | Not yet implemented — API research needed |
+| 7 | Asko Washing Machine | Appliances | ☁️ | ✏️ | Hard | Protocol fully known (Gigya → HijuConn OAuth2 + RSA-signed gateway + 003.yaml property map). ⚠️ RSA signing on LM is the implementation gate |
 | 8 | Gaggenau Home Connect (Local) | Appliances | 🏠 ⚠️ | ✏️ | Medium | Not yet implemented — profile download + WebSocket message format mapping needed |
 | 9 | Ubiquiti UDM | Presence | 🏠 | 📖 | Medium | Not yet implemented |
 | 10 | LG TV | Entertainment | 🏠 | ✏️ | Easy–Medium | Not yet implemented — WebSocket SSAP direct from 5500AC, one-time pairing required |
@@ -262,7 +264,7 @@ Based on difficulty, value, and dependencies:
 
 ### Phase 4 — Cloud Appliances (OAuth2 + token management)
 9. **Gaggenau Home Connect** — developer account + OAuth2 helper; well-documented API
-10. **Asko Washing Machine** — requires API research; implement read-only monitoring first
+10. **Asko Washing Machine** — protocol + property map fully known; RSA signing gate must be resolved first (on-device `crypto`/`ffi` or thin proxy)
 
 ### Phase 5 — Infrastructure-Dependent (proxy services)
 11. **Apple TV** — requires pyatv proxy service
