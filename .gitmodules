@@ -22,3 +22,9 @@
 [submodule "integrations/bom"]
 	path = integrations/bom
 	url = https://github.com/ks00410/cbus-bom.git
+[submodule "integrations/shelly"]
+	path = integrations/shelly
+	url = https://github.com/ks00410/cbus-shelly.git
+[submodule "integrations/udm"]
+	path = integrations/udm
+	url = https://github.com/ks00410/cbus-udm.git
