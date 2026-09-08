@@ -41,7 +41,8 @@ cbus-smart-home/
 │   ├── 14-reclaim-hot-water.md
 │   ├── 15-sigenergy-modbus.md
 │   ├── 16-solcast.md
-│   └── DASHBOARD_CAPABILITIES.md       # Master data model for dashboard design
+│   ├── DASHBOARD_CAPABILITIES.md       # Master data model for dashboard design
+│   └── MEASUREMENT_APPLICATION.md      # C-Bus app 228 assessment — which integrations should use it
 │
 ├── integrations/                        # One submodule per integration
 │   ├── panasonic/        → ks00410/cbus-panasonic-comfort-cloud
@@ -50,6 +51,7 @@ cbus-smart-home/
 │   ├── ecowitt/          → ks00410/cbus-ecowitt
 │   ├── opensprinkler/    → ks00410/Cbus-OpenSprinkler
 │   ├── sonos/            → ks00410/cbus-sonos
+│   ├── bom/              → ks00410/cbus-bom
 │   └── sigenergy-profile/→ ks00410/sigenergy-modbus-profile
 │
 └── dashboard/                           # Dashboard design (future)
@@ -87,7 +89,7 @@ git submodule update --remote --merge
 | 2 | Unisenza Radiators | [`integrations/unisenza`](https://github.com/ks00410/cbus-unisenza) | Local LAN AES | 🏠 | ✅ Production |
 | 3 | Inception Alarm | [`integrations/inception`](https://github.com/ks00410/Cbus-Inception) | Local REST + long-poll | 🏠 | ✅ Production |
 | 4 | Ecowitt Weather | [`integrations/ecowitt`](https://github.com/ks00410/cbus-ecowitt) | Local HTTP | 🏠 | ✅ Production |
-| 5 | BOM Weather | — | Cloud HTTPS | ☁️ | 🔲 Not yet written |
+| 5 | BOM Weather | [`integrations/bom`](https://github.com/ks00410/cbus-bom) | Cloud HTTPS | ☁️ | ✅ Production |
 | 6 | Shelly Devices | — | Local REST | 🏠 | 🔲 Not yet written |
 | 7 | Asko Washing Machine | — | Cloud OAuth2 | ☁️ | 🔲 Not yet written |
 | 8 | Gaggenau Home Connect | — | Local WebSocket | 🏠 | 🔲 Not yet written |
