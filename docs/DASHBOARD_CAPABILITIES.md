@@ -236,7 +236,7 @@ Shelly_LastUpdated
 | 11 | Apple TV | Entertainment | 🏠 ⚠️ | ✏️ | Medium (proxy) | Not yet implemented — proxy required |
 | 12 | Sonos | Entertainment | 🏠 | ✏️ | Easy–Medium | Prototype exists — needs rewrite |
 | 13 | OpenSprinkler | Irrigation | 🏠 | ✏️ | Easy | Prototype exists — needs rewrite |
-| 14 | Reclaim Hot Water | Appliances | ☁️ | ✏️ | Hard | Protocol fully known (AWS IoT MQTT + Modbus map). ⚠️ Lua MQTT client on LM needs verification |
+| 14 | Reclaim Hot Water | Appliances | ☁️ | ✏️ | Medium | Protocol + transport fully resolved. `mosquitto` binding with `tls_set` confirmed on LM. One-time cert issuance only pre-requisite |
 | 15 | Sigenergy | Energy | 🏠 | ✏️ | Medium | Modbus profile complete — LM config needed |
 | 16 | SolCast | Energy | ☁️ | 📖 | Easy | Not yet implemented |
 
@@ -269,7 +269,7 @@ Based on difficulty, value, and dependencies:
 12. **LG TV** — ping-only first; proxy if richer data needed
 
 ### Phase 6 — Research-Dependent (pending investigation)
-13. **Reclaim Hot Water** — protocol known (AWS IoT Core MQTT); pending Lua MQTT client verification on LM
+13. **Reclaim Hot Water** — protocol + transport fully resolved; can be implemented now (one-time cert issuance required first)
 
 ---
 

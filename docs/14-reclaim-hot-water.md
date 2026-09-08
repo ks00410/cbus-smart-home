@@ -3,7 +3,7 @@
 **Integration #:** 14  
 **Device / Service:** Reclaim Energy CO₂ heat pump hot water system  
 **Last Researched:** 2025-06  
-**Research source:** [`david-collett/reclaimenergy`](https://github.com/david-collett/reclaimenergy) (Home Assistant HACS integration, Python)
+**Research source:** [`david-collett/reclaimenergy`](https://github.com/david-collett/reclaimenergy) (Home Assistant HACS integration, Python); [LogicMachine KB — MQTT client](https://kb.logicmachine.net/integration/mqtt-client/)
 
 ---
 
@@ -78,7 +78,7 @@ The device does not push unsolicited updates. The client must publish a read req
 - Sends a read request on connect, then every 30s when heating active, every 5 minutes at idle.
 - Processes the reply as an event (MQTT message callback).
 
-On the 5500AC, a **resident Lua script** using a pure-Lua MQTT client would poll on a timer and process replies via a message callback.
+On the 5500AC, a **resident Lua script** using the built-in `mosquitto` Lua binding polls on a timer and processes replies via the `ON_MESSAGE` callback. The `socket.selectfds()` pattern (documented in the LM KB) makes the loop non-blocking and suitable for a 0-sleep resident.
 
 ---
 
@@ -144,25 +144,38 @@ Full register map from `ReclaimState.modbus_map` in `reclaimv2.py`:
 
 ## 6. Estimated Implementation Difficulty
 
-🔴 **Hard** — primarily due to the MQTT transport layer.
+🟡 **Medium** — protocol fully known, transport fully supported natively on 5500AC.
 
-The protocol itself is now fully understood. The difficulty is the Lua MQTT client requirement:
+The LogicMachine KB confirms a built-in **`mosquitto`** Lua binding (`require('mosquitto')`) with native mutual TLS support:
 
-- **Option A — Pure-Lua MQTT client:** A pure-Lua MQTT 3.1.1 client using `socket.tcp()` is feasible and exists in the open-source ecosystem (e.g. [`xHasegawa/LuaMQTT`](https://github.com/xHasegawa/LuaMQTT), [`geekscape/mqtt_lua`](https://github.com/geekscape/mqtt_lua)). TLS mutual auth requires wrapping the socket with `ssl.wrap()` passing cert/key — the same mechanism as Panasonic's `ssl.https`. **This is the preferred approach** — keeps everything on the 5500AC. Needs thorough evaluation of available Lua MQTT libraries against the LM 5.1 environment. ⚠️ **Needs verification that a suitable library works on LM Lua 5.1.**
+```lua
+client = require('mosquitto').new()
+client:tls_set('/data/ftp/AmazonRootCA1.pem', nil, '/data/ftp/reclaim_cert.pem', '/data/ftp/reclaim_key.pem')
+client.ON_CONNECT = function(status, ...) ... end
+client.ON_MESSAGE = function(mid, topic, payload) ... end
+client:connect(AWS_HOSTNAME, 8883)
+-- resident loop using socket.selectfds()
+```
 
-- **Option B — Thin MQTT proxy:** A minimal Python or Node.js script running on the home server subscribes to AWS IoT Core and exposes a simple local HTTP REST endpoint that the 5500AC polls. Simpler to implement but adds an infrastructure dependency. Same pattern proposed for Apple TV (pyatv proxy).
+No proxy, no external library, no infrastructure dependency. Everything runs on the 5500AC.
 
-The data parsing once messages arrive is straightforward — JSON decode + flat register lookup with integer arithmetic.
+**Remaining complexity:**
+- One-time cert issuance (Python + `boto3` on external machine) and upload to 5500AC via FTP
+- Unit ID hex derivation and checksum validation in Lua
+- Register decode: `ushort()` (signed 16-bit) + `/2` temperature scaling
+- Adaptive polling interval (30s active / 5min idle) via `timerfd`
+
+The data parsing is straightforward — JSON decode + flat register dictionary lookup.
 
 ---
 
 ## 7. Known Limitations and Risks
 
-- **Cloud dependency** — entirely dependent on AWS IoT Core; no local fallback.
-- **AWS Cognito cert issuance** — one-time setup requires Python + `boto3` on a separate machine. Result (cert + key PEM files) must be copied to the 5500AC.
-- **MQTT on LM Lua 5.1** — pure-Lua MQTT libraries exist but need verification against the LM environment (socket API, ssl.wrap, Lua 5.1 compatibility). If no suitable library exists, Option B (proxy) is required.
-- **Unit ID checksum** — the 17-digit ID has a CRC; must be validated before use (checksum algorithm is documented in `reclaimv2.py`).
-- **PV Connectivity mode** — Mode 4 is specifically designed for solar divert. This is highly relevant for integration with Sigenergy solar data.
+- **Cloud dependency** — entirely dependent on AWS IoT Core; no local LAN fallback.
+- **AWS Cognito cert issuance** — one-time setup requires Python + `boto3` on a separate machine. Result (three PEM files) uploaded to 5500AC `/data/ftp/` via FTP.
+- **Unit ID checksum** — the 17-digit ID has a CRC; must be validated before use (algorithm in `reclaimv2.py`).
+- **PV Connectivity mode** — Mode 4 is the solar divert mode. Directly relevant for automation with Sigenergy solar production data.
+- **No local fallback** — if AWS IoT Core is unreachable, no data is available.
 
 ---
 
@@ -198,12 +211,9 @@ ReclaimHW_LastUpdated    (String)
 
 ## 10. Action Required Before Implementation
 
-1. **Evaluate Lua MQTT libraries** — test `geekscape/mqtt_lua` or similar against LM Lua 5.1. Confirm TLS mutual auth (`ssl.wrap` with cert + key) works. This is the critical gate.
-2. **Run `obtain_aws_keys()`** — on a Python machine with `boto3` installed, run the cert issuance script once for your unit ID. Copy `AmazonRootCA1.pem`, `reclaim_cert.pem`, `reclaim_key.pem` to the 5500AC.
-3. **Validate unit ID** — implement the checksum function in Lua to validate the 17-digit ID before connecting.
-4. **Implement MQTT topic derivation** — `hexid` = `string.format("%014x", unit_id)` (14 hex chars, strip last 2 bytes per Python logic: `f"{id:#016x}"[2:-2]`).
-5. **Map register decoding to Lua** — implement `ushort()` (signed 16-bit: `if x >= 32768 then x = x - 65536 end`) and the `/2` temperature scaling.
-6. **Write integration script** once MQTT transport is confirmed.
+1. **Run `obtain_aws_keys()`** — on a Python machine with `boto3` installed, run the cert issuance script once. Upload `AmazonRootCA1.pem`, `reclaim_cert.pem`, `reclaim_key.pem` to `/data/ftp/` on the 5500AC via FTP. *(No other external infrastructure needed.)*
+2. **Note unit ID** — 17-digit numeric ID from the device label. Validate with the checksum algorithm from `reclaimv2.py`.
+3. **Write integration script** — protocol, transport (`mosquitto` + `tls_set`), register map, and decode logic are all fully documented. Ready to implement.
 
 ---
 
