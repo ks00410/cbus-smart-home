@@ -52,6 +52,8 @@ cbus-smart-home/
 │   ├── opensprinkler/    → ks00410/Cbus-OpenSprinkler
 │   ├── sonos/            → ks00410/cbus-sonos
 │   ├── bom/              → ks00410/cbus-bom
+│   ├── shelly/           → ks00410/cbus-shelly
+│   ├── udm/              → ks00410/cbus-udm
 │   └── sigenergy-profile/→ ks00410/sigenergy-modbus-profile
 │
 └── dashboard/                           # Dashboard design (future)
@@ -90,10 +92,10 @@ git submodule update --remote --merge
 | 3 | Inception Alarm | [`integrations/inception`](https://github.com/ks00410/Cbus-Inception) | Local REST + long-poll | 🏠 | ✅ Production |
 | 4 | Ecowitt Weather | [`integrations/ecowitt`](https://github.com/ks00410/cbus-ecowitt) | Local HTTP | 🏠 | ✅ Production |
 | 5 | BOM Weather | [`integrations/bom`](https://github.com/ks00410/cbus-bom) | Cloud HTTPS | ☁️ | ✅ Production |
-| 6 | Shelly Devices | — | Local REST | 🏠 | 🔲 Not yet written |
+| 6 | Shelly Devices | [`integrations/shelly`](https://github.com/ks00410/cbus-shelly) | Local REST | 🏠 | ✅ Production |
 | 7 | Asko Washing Machine | — | Cloud OAuth2 | ☁️ | 🔲 Not yet written |
 | 8 | Gaggenau Home Connect | — | Local WebSocket | 🏠 | 🔲 Not yet written |
-| 9 | Ubiquiti Dream Machine | — | Local HTTPS | 🏠 | 🔲 Not yet written |
+| 9 | Ubiquiti Dream Machine | [`integrations/udm`](https://github.com/ks00410/cbus-udm) | Local HTTPS | 🏠 | ✅ Production |
 | 10 | LG TV | — | Local WebSocket | 🏠 | 🔲 Not yet written |
 | 11 | Apple TV | — | Proxy (pyatv) | 🏠 | 🔲 Not yet written |
 | 12 | Sonos | [`integrations/sonos`](https://github.com/ks00410/cbus-sonos) | Local HTTPS | 🏠 | ✅ Production |
