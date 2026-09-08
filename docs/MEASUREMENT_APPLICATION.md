@@ -208,12 +208,42 @@ Per-device power and energy where modelling permits. Temperature sensor values.
 
 ---
 
-## Approval required
+## Implementation status
 
-Before implementing Measurement Application writes in any script, you will need to:
+| Integration | Status | DeviceId | Notes |
+|---|---|---|---|
+| **Ecowitt** | ✅ Implemented | 10 | Ch 0–9: temp, feels like, dew point, humidity, wind (m/s), gust, rain rate, rain today, pressure (Pa), solar |
+| **Sigenergy** | ⏳ Pending script | 20 | To be added when the Sigenergy derived-values Lua script is written |
+| Others | 🔲 Not yet | — | Panasonic, Unisenza, Reclaim, Shelly — lower priority |
 
-1. **Confirm the DeviceId/ChannelId allocation table** above (or provide your preferred numbering scheme)
-2. **Add the corresponding Device + Channel entries** to the C-Bus project in SpaceLogic C-Bus Commission software
-3. **Confirm which integrations to prioritise** — Ecowitt, Sigenergy, and Panasonic are the highest-value candidates
+---
 
-Once confirmed, `SetCBusMeasurement` calls can be added to each script's Resident_Poll in a single session without structural changes to the library architecture.
+## Sigenergy — implementation pattern (for when that script is written)
+
+Add the following to the Sigenergy Lua resident script alongside UserParam writes.
+Uses the same `safeMeasure` pattern as Ecowitt. DeviceId = 20.
+
+```lua
+-- In CONFIGURATION section:
+local MEAS_DEVICE = 20
+
+-- Unit codes
+local MEAS_UNIT_WATTS   = 0x1B
+local MEAS_UNIT_WH      = 0x1C
+local MEAS_UNIT_PERCENT = 0x1A
+local MEAS_UNIT_CELSIUS = 0x00
+
+-- In SECTION 6 (C-Bus I/O helpers), add safeMeasure() — same implementation as Ecowitt.
+
+-- In Resident_Poll, after UserParam writes:
+safeMeasure(0, pvPowerW,           MEAS_UNIT_WATTS,   dbg)  -- PV Power
+safeMeasure(1, batteryPowerW,      MEAS_UNIT_WATTS,   dbg)  -- Battery Power (+charge/-discharge)
+safeMeasure(2, gridPowerW,         MEAS_UNIT_WATTS,   dbg)  -- Grid Power (+import/-export)
+safeMeasure(3, loadPowerW,         MEAS_UNIT_WATTS,   dbg)  -- House Load
+safeMeasure(4, batterySOC,         MEAS_UNIT_PERCENT, dbg)  -- Battery SOC
+safeMeasure(5, batterySOH,         MEAS_UNIT_PERCENT, dbg)  -- Battery SOH
+safeMeasure(6, pvDailyKwh * 1000,  MEAS_UNIT_WH,      dbg)  -- PV Daily (kWh → Wh)
+safeMeasure(7, selfConsumptionPct, MEAS_UNIT_PERCENT, dbg)  -- Self-Consumption %
+```
+
+**C-Bus project configuration required:** Add Device 20, Channels 0–7 to the Measurement Application (app 228) before deploying.
