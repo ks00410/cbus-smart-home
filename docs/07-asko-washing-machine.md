@@ -162,31 +162,46 @@ All property names below are taken directly from [`003.yaml`](https://github.com
 
 ## 6. Estimated Implementation Difficulty
 
-🟠 **Hard** — primarily due to the RSA request signing requirement.
+🟠 **Hard** — RSA signing is confirmed feasible on LM via FFI, but requires new FFI code.
 
-### Why Hard
+### RSA Signing via LuaJIT FFI (confirmed approach)
 
-The gateway signing step (SHA-256 + RSA-PKCS1v15 + Base64) requires RSA encryption. On the 5500AC:
-- `crypto` library exposes OpenSSL via `ffi` — RSA operations are possible but require writing FFI bindings to `EVP_PKEY` / `RSA_public_encrypt`
-- `encdec` covers AES and base64 but likely not RSA
+The `user.aes` library from Unisenza proves `ffi.load("crypto")` (OpenSSL `libcrypto`) works on LM. That library uses `EVP_EncryptInit_ex` / `EVP_EncryptUpdate` / `EVP_EncryptFinal_ex` for AES. The same FFI pattern can call OpenSSL's RSA API for PKCS1v15:
 
-This is the **critical gate**: can RSA PKCS1v15 encryption be performed in Lua on LM without a pre-existing library? If not, a thin proxy (same pattern as Apple TV) is required.
+```lua
+local ffi = require("ffi")
+local crypto = ffi.load("crypto")
+ffi.cdef[[
+  typedef struct evp_pkey_st EVP_PKEY;
+  typedef struct evp_pkey_ctx_st EVP_PKEY_CTX;
+  typedef struct bio_st BIO;
+  BIO *BIO_new_mem_buf(const void *buf, int len);
+  EVP_PKEY *PEM_read_bio_PUBKEY(BIO *bp, EVP_PKEY **x, void *cb, void *u);
+  EVP_PKEY_CTX *EVP_PKEY_CTX_new(EVP_PKEY *pkey, void *e);
+  int EVP_PKEY_encrypt_init(EVP_PKEY_CTX *ctx);
+  int EVP_PKEY_CTX_set_rsa_padding(EVP_PKEY_CTX *ctx, int pad);
+  int EVP_PKEY_encrypt(EVP_PKEY_CTX *ctx, unsigned char *out, size_t *outlen,
+                       const unsigned char *in, size_t inlen);
+  void EVP_PKEY_CTX_free(EVP_PKEY_CTX *ctx);
+  void EVP_PKEY_free(EVP_PKEY *key);
+  void BIO_free(BIO *a);
+]]
+-- RSA_PKCS1_PADDING = 1
+```
 
-**Alternative approach — proxy:** A minimal Python script on the home server handles auth + signing and exposes a simple `GET /status` / `POST /set` HTTP endpoint that the 5500AC polls with plain `socket.http`. This isolates all cryptographic complexity off the 5500AC entirely and is likely the practical path.
+This is **new FFI code** — no existing LM library does RSA. It must be written and tested on the device. It is not a research unknown but an implementation task.
 
-### Once Transport is Solved
+**Alternative — thin proxy:** A Python script on the home server handles auth + signing, exposing a simple HTTP endpoint. Simpler overall but adds infrastructure dependency.
 
-After auth + signing, everything else is straightforward:
-- Device list: JSON array, find `deviceTypeCode == "003"`, extract `puid` and `statusList`
-- Status parse: flat key→value map, use property names from `003.yaml` above
-- Control: POST `{"puid": "...", "properties": {"PropertyName": "value"}}` to the update endpoint
-- No binary protocols, no WebSocket, no MQTT
+### Once Signing is Resolved
+
+After auth + signing, everything else is straightforward — JSON parsing, flat property map, simple POST for control.
 
 ---
 
 ## 7. Known Limitations and Risks
 
-- **RSA signing on LM** — the critical unknown. If `crypto`/`ffi` cannot handle RSA PKCS1v15, a proxy is required.
+- **RSA FFI code required** — no existing LM library does RSA. The FFI binding must be written and tested. If it proves too difficult, fall back to the proxy approach.
 - **Three-step auth chain** — Gigya SSO → OAuth2 → gateway is more complex than Panasonic's two-step. The initial token acquisition must be done via external Python helper.
 - **Undocumented API** — private commercial platform; endpoints or signing may change. The HA integration has had breaking auth changes at least once in its history.
 - **Cloud dependency** — no local fallback. All data unavailable if ConnectLife cloud is down.
@@ -231,13 +246,12 @@ Asko_LastUpdated       (String)
 
 ## 10. Action Required Before Implementation
 
-1. **Resolve RSA signing gate** — test whether `crypto` + `ffi` can perform RSA PKCS1v15 public-key encryption on LM Lua 5.1. If yes, signing can be done on-device. If no, implement thin Python proxy.
-2. **Confirm Asko model number** — ensure the physical machine is an "ASKO Pro" series (device type `003`, feature `000`). Other Asko models may use different device type codes.
+1. **Decide signing approach** — attempt RSA PKCS1v15 via `ffi.load("crypto")` on LM (FFI code template above), or implement a thin Python proxy. No further external research needed — both paths are fully understood.
+2. **Confirm Asko model** — ensure the physical machine is ASKO Pro (device type `003`, feature `000`). Other Asko models may use different type codes.
 3. **Generate initial tokens** — run `python -m connectlife` from `oyvindwe/connectlife` on a desktop, capture `access_token` + `refresh_token`, store in `user.secrets`.
 4. **Discover `puid`** — call `get_device_status_list`, find the `003` device, extract and persist `puid`.
 5. **Implement read-only monitoring first** — `DeviceStatus`, `CurrentProgramPhase`, `ProgramRemainingTime`, `AlarmWashFinished` are the highest-value properties.
 6. **Energy stats** — implement `energyConsumptionCurve` polling separately (daily, not per-status-poll).
-7. **Write integration script** once RSA transport gate is resolved.
 
 ---
 

@@ -2,8 +2,8 @@
 
 **Integration #:** 8  
 **Device / Service:** Gaggenau oven and cooktop via BSH Home Connect — **local LAN WebSocket, direct from 5500AC**  
-**Last Researched:** 2025  
-**Updated:** WebSocket confirmed viable on LogicMachine/5500AC — no proxy required
+**Last Researched:** 2025-06
+**Updated:** WebSocket confirmed on LM; complete message protocol mapped from [`chris-mc1/homeconnect_websocket`](https://github.com/chris-mc1/homeconnect_websocket) v1.5.4
 
 ---
 
@@ -47,6 +47,91 @@ The LogicMachine `user.websocket` library is a self-contained, production-qualit
 ```
 
 The Unisenza gold-standard pattern (library + thin resident script) applies directly here.
+
+### Complete WebSocket Message Protocol (from `homeconnect_websocket` source)
+
+All messages are JSON with a fixed envelope:
+
+```json
+{
+  "sID": <int>,      -- Session ID (from init message)
+  "msgID": <int>,    -- Incrementing message counter
+  "resource": "/ro/values",
+  "version": <int>,  -- From service version negotiation
+  "action": "GET",   -- GET | POST | RESPONSE | NOTIFY
+  "data": [...]      -- Array of entity objects (optional)
+}
+```
+
+#### Connection and Handshake Sequence
+
+1. **Connect** — WebSocket to `ws://<host>:80/homeconnect` (AES) or `wss://<host>:443/homeconnect` (TLS/PSK)
+2. **Init message received from appliance:**
+   ```json
+   {"sID":1,"msgID":1,"resource":"/ei/initialValues","version":2,"action":"NOTIFY",
+    "data":[{"edMsgID":1}]}
+   ```
+3. **Respond with app identity:**
+   ```json
+   {"sID":1,"msgID":1,"resource":"/ei/initialValues","version":2,"action":"RESPONSE",
+    "data":[{"deviceType":"Application","deviceName":"MyApp","deviceID":"<uuid>"}]}
+   ```
+4. **Request available services:**
+   ```json
+   {"sID":1,"msgID":2,"resource":"/ci/services","version":1,"action":"GET"}
+   ```
+   Response: `"data":[{"service":"ci","version":2},{"service":"ro","version":1},...]`
+5. **Authentication** (if `ci` version < 3):
+   ```json
+   {"sID":1,"msgID":3,"resource":"/ci/authentication","version":1,"action":"GET",
+    "data":[{"nonce":"<32-char-random-urlsafe-b64>"}]}
+   ```
+6. **Request entity descriptions + initial values:**
+   ```json
+   {"sID":1,"msgID":4,"resource":"/ro/allDescriptionChanges","version":1,"action":"GET"}
+   {"sID":1,"msgID":5,"resource":"/ro/allMandatoryValues","version":1,"action":"GET"}
+   ```
+   Response data: array of entity objects: `[{"uid":1234,"value":"BSH.Common.EnumType.OperationState.Inactive","access":"read"}]`
+7. **Device ready** (if `ei` version == 2):
+   ```json
+   {"sID":1,"msgID":6,"resource":"/ei/deviceReady","version":2,"action":"NOTIFY"}
+   ```
+
+#### Reading Entity State
+
+After init, entity updates arrive as NOTIFY messages on `/ro/values` or `/ro/descriptionChange`. Each message's `data` is an array of `{"uid":<int>,"value":<any>}` objects. The `uid` maps to the entity's full key name (e.g. `BSH.Common.Status.OperationState`) via the profile/description data.
+
+For a single entity GET:
+```json
+{"sID":1,"msgID":7,"resource":"/ro/values","version":1,"action":"GET",
+ "data":[{"uid":1234}]}
+```
+
+#### Sending a Command (POST)
+
+```json
+{"sID":1,"msgID":8,"resource":"/ro/values","version":1,"action":"POST",
+ "data":[{"uid":1234,"value":"BSH.Common.EnumType.PowerState.On"}]}
+```
+
+#### AES Encryption Detail (AES-mode appliances only)
+
+AES socket operates over **plain `ws://` WebSocket** (not WSS). Each WebSocket frame carries a **binary payload** (not text JSON):
+
+- **Key derivation:** `enckey = HMAC-SHA256(psk, b"ENC")`, `mackey = HMAC-SHA256(psk, b"MAC")`
+- **Encryption:** AES-256-CBC with the IV from the profile
+- **Padding:** Pad to 16-byte boundary: `msg + 0x00 + random(pad_len-2) + byte(pad_len)`
+- **Send frame:** `AES_CBC_encrypt(padded_msg) + HMAC-SHA256(mackey, iv + 0x45 + last_tx_hmac + enc_msg)[0:16]`
+- **Receive frame:** Last 16 bytes = HMAC tag; first n-16 bytes = ciphertext. Verify HMAC before decrypting.
+- **State:** CBC IV is shared across the session (stateful — must process messages in order)
+
+#### TLS/PSK Mode Detail
+
+- **Transport:** WSS — `wss://<host>:443/homeconnect`
+- **TLS:** TLS 1.2, PSK cipher suite (`TLS_PSK_WITH_AES_128_CBC_SHA` or similar), `verify = CERT_NONE`, no hostname check
+- **PSK:** Decoded from the urlsafe-base64 `psk64` in the appliance profile
+
+For LuaSec: `ssl.wrap(sock, {protocol="tlsv1_2", ciphers="PSK", verify="none", psk=psk_bytes})`
 
 ### PSK TLS caveat
 
@@ -170,7 +255,7 @@ Based on entity descriptions in [`cooking.py`](https://github.com/chris-mc1/home
 
 ## 6. Estimated Implementation Difficulty
 
-🟠 **Medium.**
+🟡 **Medium** — protocol fully known, one remaining transport gate.
 
 Components:
 
@@ -179,23 +264,23 @@ Components:
 | `user.websocket` library | ✅ Done | Use LogicMachine KB Casambi library verbatim or adapt |
 | AES payload encryption | ✅ Done | Reuse `user.aes` from Unisenza gold-standard |
 | Profile download | ✅ Easy | One-time, desktop tool |
-| PSK/TLS mode | ⚠️ Uncertain | Test on device — may need to fall back to AES mode |
-| Appliance protocol message format | 🟠 Medium | JSON message format needs mapping from `homeconnect-websocket` source |
+| **Message format / protocol** | ✅ **Fully known** | Mapped from `homeconnect_websocket` source — see Section 1 |
+| PSK/TLS mode | ⚠️ Uncertain | LuaSec PSK cipher support must be tested on device |
 | C-Bus resident script | 🟡 Easy | Same pattern as Unisenza |
 | Event script for control | 🟡 Easy | Same pattern as Panasonic event script |
 
-The main unknown is the **message format** — the specific JSON request/response schema for querying entity values and sending commands. This must be derived from the `homeconnect-websocket` Python library source code in a future implementation session.
+The only remaining uncertainty is whether LuaSec on the 5500AC supports PSK ciphersuites. For AES-mode appliances, there is no uncertainty at all — the full AES encryption algorithm, padding, HMAC verification, and message format are completely documented above.
 
 ---
 
 ## 7. Known Limitations and Risks
 
-- **PSK TLS support uncertain** — if TLS/PSK ciphersuites are not available in the 5500AC's LuaSec build, TLS-mode appliances cannot be connected directly. Mitigation: check the `connectionType` in the downloaded profile — if it is `"AES"`, proceed confidently. If `"TLS"`, test PSK support on the device before committing to this approach.
+- **PSK TLS support uncertain** — if LuaSec on the 5500AC does not support PSK ciphersuites, TLS-mode appliances require an alternative (check `connectionType` in the downloaded profile — `"AES"` is the simpler path).
 - **Remote control safety gate** — the oven only accepts programme start commands when the user has physically pressed "Remote Start" on the appliance. Monitoring works without this.
-- **Message format research needed** — the exact WebSocket JSON protocol (request/response message schema, entity query format, command format) must be mapped from the Python `homeconnect-websocket` source code in a dedicated implementation session.
-- **Static IP required** — assign a DHCP reservation for each appliance to prevent IP changes breaking the integration.
+- **Stateful AES CBC** — the AES socket is stateful (IV and HMAC chain across the session). A persistent WebSocket connection is therefore preferable over reconnecting per-poll, as each reconnect resets the IV. The `user.aes` library from Unisenza will need adaptation to maintain IV state across messages.
+- **`uid` mapping** — entity values arrive by numeric `uid`, not by the friendly key name. The `uid` → key-name mapping comes from `/ro/allDescriptionChanges` on connect. This mapping must be parsed and cached at connection time.
+- **Static IP required** — assign a DHCP reservation for each appliance to prevent IP changes.
 - **Profile re-download on re-keying** — unlikely but if BSH rotates keys, profiles must be re-downloaded.
-- **`DeviceDescription.xml` / `FeatureMapping.xml`** — these files are required by the library to know which entity keys the specific appliance supports. The relevant entity keys must be extracted from these files and configured in the Lua integration.
 
 ---
 
@@ -237,13 +322,12 @@ Cooktop_LastUpdated    (String)
 
 ---
 
-## Action Required
+## 10. Action Required Before Implementation
 
-1. **Download appliance profiles** — install [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader), log in with Home Connect account, download ZIP for oven and cooktop. Note the `connectionType` field (`"TLS"` or `"AES"`).
-2. **Test PSK TLS** — if `connectionType = "TLS"`, test on the live 5500AC whether `ssl.wrap()` supports PSK ciphersuites. If not, check whether the appliance supports AES fallback.
-3. **Map WebSocket message format** — read `homeconnect-websocket` Python source to document the exact JSON request/response format for entity queries and control commands.
-4. **Obtain `user.websocket` library** — copy the Casambi WebSocket user library from the [LogicMachine KB](https://kb.logicmachine.net/integration/casambi/) and load it on the 5500AC.
-5. **Write integration script** in a future session — `user.gaggenau` library + thin resident + event script for oven control.
+1. **Download appliance profiles** — run [Home Connect Profile Downloader](https://github.com/bruestel/homeconnect-profile-downloader) once with Home Connect account. Extract `psk64`, `iv64` (AES) or `psk64` only (TLS), and `connectionType` from each appliance's profile ZIP.
+2. **Confirm connection type** — if `connectionType = "AES"`, proceed directly. If `"TLS"`, test PSK cipher support on the live 5500AC (`ssl.wrap` with `ciphers="PSK"`).
+3. **Obtain `user.websocket` library** — copy from the [LogicMachine KB Casambi page](https://kb.logicmachine.net/integration/casambi/) and load on the 5500AC.
+4. **Write integration script** — protocol, handshake, message format, AES encryption, and entity key names are all fully documented. Ready to implement once profile credentials are in hand.
 
 ---
 
